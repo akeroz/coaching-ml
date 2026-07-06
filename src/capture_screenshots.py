@@ -1,7 +1,6 @@
 """Script ponctuel (hors pipeline) pour capturer des screenshots propres des 6 pages
-de l'application Streamlit, utilises comme preuves dans le dossier de certification.
-A executer avec l'application deja lancee sur http://localhost:8501."""
-
+de l'application Streamlit
+"""
 import time
 from pathlib import Path
 
