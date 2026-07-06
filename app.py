@@ -28,6 +28,7 @@ PROCESSED_PATH = ROOT_DIR / "data" / "processed" / "dataset_final.csv"
 RESULTS_PATH = ROOT_DIR / "models" / "results.json"
 ARCHITECTURE_PNG = ROOT_DIR / "docs" / "architecture_diagram.png"
 SELECTION_REPORT = ROOT_DIR / "docs" / "MODEL_SELECTION_REPORT.md"
+RGPD_AI_ACT_DOC = ROOT_DIR / "docs" / "RGPD_AI_ACT.md"
 
 
 @st.cache_data
@@ -112,6 +113,18 @@ if page == PAGES[0]:
     with col3:
         st.markdown("**Application**")
         st.markdown("- Streamlit\n- Deploiement Streamlit Cloud")
+
+    st.header("Conformite RGPD & AI Act")
+    st.write(
+        "Les vrais clients (page \"Mes clients\") sont stockes localement dans "
+        "data/coaching.db, exclu du depot de code et jamais publie - separe du "
+        "dataset synthetique utilise pour l'entrainement initial. Le systeme est "
+        "classe a risque minimal au sens de l'AI Act (pas de decision automatisee, "
+        "supervision humaine du coach maintenue, y compris lors du reentrainement)."
+    )
+    if RGPD_AI_ACT_DOC.exists():
+        with st.expander("Voir l'analyse complete RGPD & AI Act"):
+            st.markdown(RGPD_AI_ACT_DOC.read_text(encoding="utf-8"))
 
 # ----------------------------------------------------------------------------
 # PAGE 2 - PIPELINE ETL
@@ -248,6 +261,12 @@ elif page == PAGES[2]:
 elif page == PAGES[3]:
     st.title("Prediction en temps reel")
     st.write("Renseignez le profil d'un client pour estimer sa probabilite d'atteindre son objectif.")
+    st.info(
+        "**Transparence (AI Act, art. 50)** : ce resultat est une estimation statistique "
+        "produite par un systeme d'IA, pas une decision automatique. Le coach reste seul "
+        "decisionnaire de l'accompagnement propose (RGPD, art. 22 - pas de decision "
+        "entierement automatisee)."
+    )
 
     model, scaler, encoders = load_model_artifacts()
 

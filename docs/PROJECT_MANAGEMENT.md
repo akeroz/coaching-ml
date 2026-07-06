@@ -140,6 +140,33 @@ situation de handicap visuel ou moteur :
   tableaux `st.dataframe`) exposent une structure HTML semantique lisible par
   les lecteurs d'ecran standards (NVDA, VoiceOver).
 
+## Maintenabilite et procedure de rollback du modele
+
+Le reentrainement (`src/retrain_with_real_data.py`) integre deja une garde
+anti-regression au moment T : un nouveau modele n'est promu en production
+que si son score composite n'est pas inferieur a l'actuel. Cette garde ne
+couvre toutefois pas une degradation qui n'apparaitrait qu'a l'usage (ex.
+biais introduit par un petit nombre de clients reels non representatifs).
+Procedure de retour en arriere en cas de probleme constate apres coup :
+
+1. **Detecter** : chaque promotion de modele met a jour
+   `docs/MODEL_SELECTION_REPORT.md` avec la mention "Reentrainement avec
+   donnees reelles" et les scores avant/apres — comparer ce rapport a sa
+   version precedente (historique Git) permet de reperer un changement
+   suspect.
+2. **Isoler** : `models/candidate/` conserve les modeles candidats du dernier
+   reentrainement (avant promotion), ce qui permet de comparer directement
+   l'ancien et le nouveau modele sans avoir a relancer un entrainement.
+3. **Revenir en arriere** : restaurer `models/best_model.pkl`,
+   `data/processed/scaler.pkl`, `data/processed/label_encoders.pkl` et
+   `data/processed/dataset_final.csv` a partir du commit Git precedent la
+   promotion (`git checkout <commit_precedent> -- models/ data/processed/`),
+   puis committer ce retour en arriere avec un message explicite.
+4. **Documenter** : ajouter une entree dans la retrospective ci-dessous
+   expliquant la cause du rollback, pour eviter de reproduire l'erreur lors
+   d'un futur reentrainement (ex. exiger un nombre minimal de clients plus
+   eleve, ou verifier la representativite du profil des nouveaux clients).
+
 ## Retrospective
 
 **Ce qui a fonctionne :**

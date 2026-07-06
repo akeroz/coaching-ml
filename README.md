@@ -5,6 +5,8 @@ permettant d'estimer la probabilite qu'un client atteigne son objectif
 (seche, prise de masse, recomposition) a partir de son profil et de ses
 habitudes, afin d'adapter l'accompagnement propose a distance.
 
+**Demo en ligne (dataset synthetique)** : https://coaching-ml-dahro8p5dpihporqh7uhjm.streamlit.app/
+
 ## Architecture technique
 
 ```
@@ -43,6 +45,13 @@ python src/architecture_diagram.py
 streamlit run app.py
 ```
 
+Une fois l'application lancee, la page **"Mes clients (usage reel)"** permet
+d'ajouter de vrais clients (stockes localement dans `data/coaching.db`,
+jamais commite - voir `docs/RGPD_AI_ACT.md`), de suivre leur poids semaine
+apres semaine, d'exporter un resume PDF, et de relancer un reentrainement du
+modele integrant ces clients reels des qu'il y en a suffisamment (garde
+anti-regression automatique, voir `src/retrain_with_real_data.py`).
+
 ## Structure du projet
 
 ```
@@ -51,20 +60,25 @@ coaching-ml/
 │   ├── raw/                  # Donnees brutes generees (clients_raw.csv)
 │   └── processed/             # Dataset final + scaler + encoders
 ├── src/
-│   ├── etl.py                 # Extraction / Transformation / Chargement
-│   ├── train.py                # Entrainement des 4 modeles + GridSearchCV
-│   ├── evaluate.py              # (metriques integrees dans train.py)
-│   ├── select_model.py          # Selection automatique du meilleur modele
-│   ├── predict.py               # API de prediction (recharge best_model.pkl)
-│   └── architecture_diagram.py  # Schema d'architecture (matplotlib)
+│   ├── etl.py                    # Extraction / Transformation / Chargement
+│   ├── train.py                   # Entrainement des 4 modeles + GridSearchCV
+│   ├── evaluate.py                 # (metriques integrees dans train.py)
+│   ├── select_model.py             # Selection automatique du meilleur modele
+│   ├── predict.py                  # API de prediction (recharge best_model.pkl)
+│   ├── architecture_diagram.py     # Schema d'architecture (matplotlib)
+│   ├── db.py                       # Persistance SQLite des vrais clients (prive)
+│   ├── report.py                   # Export PDF par client
+│   └── retrain_with_real_data.py   # Reentrainement + garde anti-regression
 ├── models/                      # Modeles entraines, best_model.pkl, results.json
+├── data/coaching.db              # Vrais clients (SQLite, jamais commite)
 ├── docs/
 │   ├── CDC.md
 │   ├── ARCHITECTURE.md
 │   ├── PROJECT_MANAGEMENT.md
 │   ├── MODEL_SELECTION_REPORT.md
+│   ├── RGPD_AI_ACT.md
 │   └── architecture_diagram.png
-├── app.py                       # Dashboard Streamlit (6 pages)
+├── app.py                       # Dashboard Streamlit (7 pages)
 ├── requirements.txt
 └── README.md
 ```
