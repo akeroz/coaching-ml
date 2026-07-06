@@ -21,34 +21,15 @@ from predict import build_feature_row, load_artifacts  # noqa: E402
 st.set_page_config(page_title="Coaching ML - builtbyarthur", page_icon="💪", layout="wide")
 
 RAW_PATH = ROOT_DIR / "data" / "raw" / "clients_raw.csv"
-ANNUAIRE_PATH = ROOT_DIR / "data" / "raw" / "annuaire_clients.csv"
 PROCESSED_PATH = ROOT_DIR / "data" / "processed" / "dataset_final.csv"
 RESULTS_PATH = ROOT_DIR / "models" / "results.json"
 ARCHITECTURE_PNG = ROOT_DIR / "docs" / "architecture_diagram.png"
 SELECTION_REPORT = ROOT_DIR / "docs" / "MODEL_SELECTION_REPORT.md"
-RGPD_AI_ACT_DOC = ROOT_DIR / "docs" / "RGPD_AI_ACT.md"
 
 
 @st.cache_data
 def load_raw():
     return pd.read_csv(RAW_PATH)
-
-
-@st.cache_data
-def load_annuaire():
-    return pd.read_csv(ANNUAIRE_PATH)
-
-
-@st.cache_data
-def load_raw_with_identity():
-    """Fusion d'affichage uniquement (jamais utilisee pour l'entrainement) : donnees
-    brutes + prenom/nom issus de la table d'identite separee, pour un rendu plus
-    lisible cote coach dans le dashboard."""
-    raw = load_raw()
-    annuaire = load_annuaire()
-    merged = annuaire.merge(raw, on="client_id")
-    cols = ["client_id", "prenom", "nom"] + [c for c in raw.columns if c != "client_id"]
-    return merged[cols]
 
 
 @st.cache_data
@@ -128,17 +109,6 @@ if page == PAGES[0]:
         st.markdown("**Application**")
         st.markdown("- Streamlit\n- Deploiement Streamlit Cloud")
 
-    st.header("Conformite RGPD & AI Act")
-    st.write(
-        "Le projet applique un principe de pseudonymisation par conception : les donnees "
-        "d'identite (prenom/nom) sont stockees dans une table separee, jamais fusionnee "
-        "au dataset d'entrainement. Le systeme est classe a risque minimal au sens de "
-        "l'AI Act (pas de decision automatisee, supervision humaine du coach maintenue)."
-    )
-    if RGPD_AI_ACT_DOC.exists():
-        with st.expander("Voir l'analyse complete RGPD & AI Act"):
-            st.markdown(RGPD_AI_ACT_DOC.read_text(encoding="utf-8"))
-
 # ----------------------------------------------------------------------------
 # PAGE 2 - PIPELINE ETL
 # ----------------------------------------------------------------------------
@@ -147,25 +117,15 @@ elif page == PAGES[1]:
 
     raw_df = load_raw()
     processed_df = load_processed()
-    raw_with_identity_df = load_raw_with_identity()
 
     st.header("Donnees brutes vs donnees traitees")
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Donnees brutes (avec identite, cote coach)")
-        st.dataframe(raw_with_identity_df.head(15), use_container_width=True)
-        st.caption(
-            "Prenom/nom proviennent d'une table d'identite separee "
-            "(data/raw/annuaire_clients.csv), fusionnee ici uniquement pour l'affichage."
-        )
+        st.subheader("Donnees brutes")
+        st.dataframe(raw_df.head(15), use_container_width=True)
     with col2:
-        st.subheader("Donnees traitees (features engineered, pour le ML)")
+        st.subheader("Donnees traitees (features engineered)")
         st.dataframe(processed_df.head(15), use_container_width=True)
-        st.caption(
-            "Aucune donnee d'identite (prenom/nom) dans ce dataset : le modele ne "
-            "manipule que l'identifiant pseudonymise CLIENT_XXX (principe de "
-            "minimisation, art. 5.1.c RGPD)."
-        )
 
     st.header("Statistiques descriptives")
     st.dataframe(raw_df.describe(include="all").transpose(), use_container_width=True)
@@ -284,12 +244,6 @@ elif page == PAGES[2]:
 elif page == PAGES[3]:
     st.title("Prediction en temps reel")
     st.write("Renseignez le profil d'un client pour estimer sa probabilite d'atteindre son objectif.")
-    st.info(
-        "**Transparence (AI Act, art. 50)** : ce resultat est une estimation statistique "
-        "produite par un systeme d'IA, pas une decision automatique. Le coach reste seul "
-        "decisionnaire de l'accompagnement propose (RGPD, art. 22 - pas de decision "
-        "entierement automatisee)."
-    )
 
     model, scaler, encoders = load_model_artifacts()
 
@@ -369,13 +323,7 @@ elif page == PAGES[4]:
     st.title("Dashboard de suivi clients")
     st.write("Simulation du suivi de 10 clients sur 12 semaines (poids reel vs objectif).")
 
-    raw_df = load_raw_with_identity()
-    raw_df["nom_affiche"] = raw_df["prenom"] + " " + raw_df["nom"].str[0] + "."
-    st.caption(
-        "Noms affiches a titre illustratif (table d'identite separee du dataset ML, "
-        "voir Pipeline ETL). L'identifiant technique CLIENT_XXX reste la cle utilisee "
-        "par le modele."
-    )
+    raw_df = load_raw()
 
     @st.cache_data
     def simulate_tracking(seed: int = 7, n_clients: int = 10, n_weeks: int = 12):
@@ -393,8 +341,8 @@ elif page == PAGES[4]:
                 bruit = rng.normal(0, 0.35)
                 poids_actuel = poids_debut + total_delta * progress_ratio + bruit
                 rows.append({
-                    "client_id": client["client_id"], "nom_affiche": client["nom_affiche"],
-                    "semaine": week, "poids": round(poids_actuel, 1), "poids_cible": poids_cible,
+                    "client_id": client["client_id"], "semaine": week,
+                    "poids": round(poids_actuel, 1), "poids_cible": poids_cible,
                     "poids_initial": poids_debut, "objectif": client["objectif"],
                 })
         return pd.DataFrame(rows)
@@ -403,19 +351,18 @@ elif page == PAGES[4]:
 
     st.header("Progression par client")
     fig_track = px.line(
-        tracking_df, x="semaine", y="poids", color="nom_affiche", markers=True,
+        tracking_df, x="semaine", y="poids", color="client_id", markers=True,
         title="Evolution du poids sur 12 semaines (simulation)",
-        labels={"nom_affiche": "Client"},
     )
-    for nom_affiche in tracking_df["nom_affiche"].unique():
-        cible = tracking_df[tracking_df["nom_affiche"] == nom_affiche]["poids_cible"].iloc[0]
+    for client_id in tracking_df["client_id"].unique():
+        cible = tracking_df[tracking_df["client_id"] == client_id]["poids_cible"].iloc[0]
         fig_track.add_hline(y=cible, line_dash="dot", opacity=0.15)
     st.plotly_chart(fig_track, use_container_width=True)
     st.caption("Chaque courbe represente la trajectoire de poids simulee d'un client vers son objectif.")
 
     st.header("KPIs globaux")
     summary_rows = []
-    for (client_id, nom_affiche), grp in tracking_df.groupby(["client_id", "nom_affiche"]):
+    for client_id, grp in tracking_df.groupby("client_id"):
         debut = grp["poids_initial"].iloc[0]
         cible = grp["poids_cible"].iloc[0]
         actuel = grp[grp["semaine"] == grp["semaine"].max()]["poids"].iloc[0]
@@ -428,15 +375,14 @@ elif page == PAGES[4]:
         else:
             statut = "A risque"
         summary_rows.append({
-            "client": nom_affiche, "client_id": client_id, "poids_initial": debut,
-            "poids_actuel": round(actuel, 1), "poids_cible": cible,
-            "progression": f"{progress_pct:.0%}", "statut": statut,
+            "client_id": client_id, "poids_initial": debut, "poids_actuel": round(actuel, 1),
+            "poids_cible": cible, "progression": f"{progress_pct:.0%}", "statut": statut,
         })
     summary_df = pd.DataFrame(summary_rows)
 
     taux_reussite = (summary_df["statut"] == "Objectif atteint").mean()
-    plus_avance = summary_df.loc[summary_df["progression"].str.rstrip("%").astype(float).idxmax(), "client"]
-    plus_en_retard = summary_df.loc[summary_df["progression"].str.rstrip("%").astype(float).idxmin(), "client"]
+    plus_avance = summary_df.loc[summary_df["progression"].str.rstrip("%").astype(float).idxmax(), "client_id"]
+    plus_en_retard = summary_df.loc[summary_df["progression"].str.rstrip("%").astype(float).idxmin(), "client_id"]
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Taux de reussite global", f"{taux_reussite:.0%}")

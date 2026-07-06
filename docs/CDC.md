@@ -40,22 +40,6 @@ Hors perimetre (v1) :
 - Plotly / Matplotlib pour la data visualisation.
 - Stockage local (CSV, pickle) - pas de base de donnees.
 
-## Choix de la source de donnees
-
-Deux datasets Kaggle reels ont ete evalues avant de trancher : "Gym Members
-Exercise Dataset" (poids, taille, BPM, calories brulees, frequence
-d'entrainement) et "Obesity Levels Estimation" (habitudes alimentaires,
-activite physique, historique familial). Aucun des deux ne contient de
-variable cible correspondant au besoin metier ("le client atteint-il SON
-objectif personnalise ?") : cette donnee est propre a un suivi de coaching
-longitudinal et n'existe dans aucun jeu de donnees public (et pour cause,
-elle est sensible au sens RGPD). **Decision** : conserver un dataset
-synthetique dont les plages de valeurs sont calibrees sur des formules
-physiologiques reconnues (Mifflin-St Jeor pour le besoin calorique), et
-documenter cette limite assumee (voir retrospective, `PROJECT_MANAGEMENT.md`).
-Une migration vers des donnees reelles anonymisees issues du suivi client
-reel reste l'evolution prioritaire (voir aussi `docs/RGPD_AI_ACT.md`).
-
 ## Contraintes
 
 - **Budget zero** : uniquement des librairies open source.

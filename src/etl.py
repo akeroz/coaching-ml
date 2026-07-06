@@ -4,16 +4,10 @@ Pipeline ETL - Prediction de progression coaching fitness (@builtbyarthur)
 Finalite (RGPD) : ce traitement vise a estimer la probabilite qu'un client
 de coaching en ligne atteigne son objectif physique (seche / prise de masse /
 recomposition), afin d'adapter l'accompagnement propose par le coach.
-
-Principe de pseudonymisation (art. 4(5) RGPD) : le prenom du client (donnee
-d'identification, utilisee uniquement pour l'affichage cote coach dans le
-dashboard) est stocke dans une table d'identite separee
-(data/raw/annuaire_clients.csv), qui ne fait JAMAIS partie du dataset servant
-a l'entrainement ou a la prediction (data/processed/dataset_final.csv).
-Le pipeline ML ne manipule que l'identifiant pseudonymise (CLIENT_XXX). Dans
-un contexte reel (donnees non synthetiques), cette table d'identite devrait
-etre stockee separement (acces restreint, hors depot de code partage) : voir
-docs/RGPD_AI_ACT.md pour le detail des mesures et de l'analyse AI Act.
+Aucune donnee directement identifiante n'est collectee : chaque client est
+represente par un identifiant pseudonymise (CLIENT_XXX) genere localement,
+sans nom, email, ni identifiant reseau social. Les donnees sont stockees en
+local (CSV) et ne sont pas partagees avec des tiers.
 
 Etapes :
     1. Extraction   : generation / chargement des donnees brutes + inventaire
@@ -33,30 +27,9 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 RAW_PATH = ROOT_DIR / "data" / "raw" / "clients_raw.csv"
-ANNUAIRE_PATH = ROOT_DIR / "data" / "raw" / "annuaire_clients.csv"
 PROCESSED_PATH = ROOT_DIR / "data" / "processed" / "dataset_final.csv"
 SCALER_PATH = ROOT_DIR / "data" / "processed" / "scaler.pkl"
 ENCODERS_PATH = ROOT_DIR / "data" / "processed" / "label_encoders.pkl"
-
-PRENOMS_H = [
-    "Lucas", "Hugo", "Nathan", "Thomas", "Maxime", "Antoine", "Julien", "Alexandre",
-    "Kevin", "Romain", "Quentin", "Baptiste", "Mathieu", "Adrien", "Florian",
-    "Guillaume", "Clement", "Vincent", "Simon", "Theo", "Gabriel", "Arthur",
-    "Benjamin", "Nicolas", "Yanis", "Rayan", "Mehdi", "Karim", "Sofiane", "Bilal",
-]
-PRENOMS_F = [
-    "Emma", "Lea", "Chloe", "Manon", "Camille", "Sarah", "Laura", "Julie",
-    "Marion", "Pauline", "Charlotte", "Ines", "Lucie", "Justine", "Amandine",
-    "Melanie", "Celia", "Oceane", "Margaux", "Elise", "Anais", "Clara",
-    "Sofia", "Yasmine", "Nora", "Sabrina", "Lina", "Alicia", "Emilie", "Marine",
-]
-NOMS_FAMILLE = [
-    "Martin", "Bernard", "Dubois", "Thomas", "Robert", "Petit", "Durand", "Leroy",
-    "Moreau", "Simon", "Laurent", "Lefebvre", "Michel", "Garcia", "David", "Bertrand",
-    "Roux", "Vincent", "Fournier", "Morel", "Girard", "Andre", "Lefevre", "Mercier",
-    "Dupont", "Lambert", "Bonnet", "Francois", "Martinez", "Legrand", "Garnier", "Faure",
-    "Rousseau", "Blanc", "Guerin", "Muller", "Henry", "Roussel", "Nicolas", "Perrin",
-]
 
 CAT_COLS = ["sexe", "objectif", "niveau"]
 NUM_COLS = [
@@ -213,30 +186,6 @@ def _add_target(df: pd.DataFrame, besoin_calorique_estime: np.ndarray, rng: np.r
     return df
 
 
-def generate_annuaire(df: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
-    """Genere la table d'identite (prenom, nom) associee aux client_id, separee du
-    dataset ML. Utilise un generateur aleatoire independant (seed+1) afin de ne pas
-    perturber la sequence de tirages de generate_raw_data (donnees numeriques et
-    cible inchangees, pas de reentrainement necessaire)."""
-    rng_identite = np.random.default_rng(seed + 1)
-    n = len(df)
-
-    prenoms = np.where(
-        df["sexe"].to_numpy() == "H",
-        rng_identite.choice(PRENOMS_H, size=n),
-        rng_identite.choice(PRENOMS_F, size=n),
-    )
-    noms = rng_identite.choice(NOMS_FAMILLE, size=n)
-
-    return pd.DataFrame(
-        {
-            "client_id": df["client_id"],
-            "prenom": prenoms,
-            "nom": noms,
-        }
-    )
-
-
 def inspect_raw_data(df: pd.DataFrame) -> dict:
     """Inventaire des donnees brutes : types, valeurs manquantes, doublons."""
     inventory = {
@@ -315,9 +264,6 @@ def run_etl(n_clients: int = 600, seed: int = 42, verbose: bool = True) -> pd.Da
     inventory = inspect_raw_data(raw_df)
     raw_df.to_csv(RAW_PATH, index=False)
 
-    annuaire_df = generate_annuaire(raw_df, seed=seed)
-    annuaire_df.to_csv(ANNUAIRE_PATH, index=False)
-
     if verbose:
         print("=== Inventaire des donnees brutes ===")
         print(json.dumps(inventory, indent=2, ensure_ascii=False, default=str))
@@ -333,7 +279,6 @@ def run_etl(n_clients: int = 600, seed: int = 42, verbose: bool = True) -> pd.Da
 
     if verbose:
         print(f"\nDataset brut       -> {RAW_PATH}")
-        print(f"Annuaire (identite) -> {ANNUAIRE_PATH}  (jamais fusionne au dataset ML)")
         print(f"Dataset final       -> {PROCESSED_PATH}")
         print(f"Scaler              -> {SCALER_PATH}")
         print(f"Encoders            -> {ENCODERS_PATH}")
