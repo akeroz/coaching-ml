@@ -15,8 +15,11 @@ from sklearn.metrics import roc_curve
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
+import db  # noqa: E402
 from etl import CAT_COLS, FEATURE_COLUMNS, NUM_COLS, TARGET_COL  # noqa: E402
 from predict import build_feature_row, load_artifacts  # noqa: E402
+from report import build_client_pdf  # noqa: E402
+from retrain_with_real_data import MIN_REAL_CLIENTS, run_retrain  # noqa: E402
 
 st.set_page_config(page_title="Coaching ML - builtbyarthur", page_icon="💪", layout="wide")
 
@@ -65,6 +68,7 @@ PAGES = [
     "4. Prediction en temps reel",
     "5. Dashboard de suivi clients",
     "6. Gestion de projet",
+    "7. Mes clients (usage reel)",
 ]
 
 page = st.sidebar.radio("Navigation", PAGES)
@@ -465,3 +469,183 @@ modele lent ou instable en validation croisee.
 notification automatique si client a risque, version mobile.
         """
     )
+
+# ----------------------------------------------------------------------------
+# PAGE 7 - MES CLIENTS (USAGE REEL)
+# ----------------------------------------------------------------------------
+elif page == PAGES[6]:
+    st.title("Mes clients (usage reel)")
+    st.info(
+        "Ces donnees sont stockees localement dans data/coaching.db, distinct du "
+        "dataset synthetique utilise pour l'entrainement initial. Ce fichier n'est "
+        "jamais publie (voir .gitignore) : il peut contenir de vraies donnees "
+        "personnelles des lors que vous ajoutez de vrais clients."
+    )
+
+    tab_liste, tab_ajout, tab_suivi, tab_reentrainement = st.tabs(
+        ["Mes clients", "Ajouter un client", "Suivi hebdomadaire", "Reentrainement du modele"]
+    )
+
+    with tab_liste:
+        clients_df = db.get_all_clients()
+        if clients_df.empty:
+            st.write("Aucun client enregistre pour le moment. Utilisez l'onglet \"Ajouter un client\".")
+        else:
+            st.dataframe(
+                clients_df[[
+                    "client_id", "prenom", "nom", "objectif", "niveau", "poids_initial_kg",
+                    "poids_cible_kg", "date_creation", "objectif_atteint", "actif",
+                ]],
+                use_container_width=True,
+            )
+
+            st.subheader("Fiche client")
+            selected_id = st.selectbox(
+                "Choisir un client", clients_df["client_id"],
+                format_func=lambda cid: f"{cid} - " + clients_df.set_index('client_id').loc[cid, 'prenom'] + " " + clients_df.set_index('client_id').loc[cid, 'nom'],
+            )
+            client = db.get_client(selected_id)
+            weigh_ins = db.get_weigh_ins(selected_id)
+
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                if not weigh_ins.empty:
+                    fig = px.line(weigh_ins, x="date_saisie", y="poids", markers=True,
+                                  title=f"Evolution du poids - {client['prenom']} {client['nom']}")
+                    fig.add_hline(y=client["poids_cible_kg"], line_dash="dot",
+                                  annotation_text="Objectif")
+                    st.plotly_chart(fig, use_container_width=True)
+            with col2:
+                st.metric("Poids initial", f"{client['poids_initial_kg']} kg")
+                st.metric("Poids actuel", f"{weigh_ins.iloc[-1]['poids']} kg" if not weigh_ins.empty else "N/A")
+                st.metric("Poids cible", f"{client['poids_cible_kg']} kg")
+
+            st.subheader("Cloturer le suivi")
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                if st.button("Marquer : objectif atteint"):
+                    db.update_client_status(selected_id, actif=False, objectif_atteint=1)
+                    st.success("Client marque comme objectif atteint. Rechargez la page pour voir la mise a jour.")
+            with col_b:
+                if st.button("Marquer : objectif non atteint"):
+                    db.update_client_status(selected_id, actif=False, objectif_atteint=0)
+                    st.success("Client marque comme objectif non atteint. Rechargez la page pour voir la mise a jour.")
+            with col_c:
+                if st.button("Supprimer ce client", type="secondary"):
+                    db.delete_client(selected_id)
+                    st.success("Client supprime. Rechargez la page.")
+
+            st.subheader("Export PDF")
+            model, scaler, encoders = load_model_artifacts()
+            profile = {
+                "age": int(client["age"]), "sexe": client["sexe"], "taille_cm": client["taille_cm"],
+                "poids_initial_kg": client["poids_initial_kg"], "poids_cible_kg": client["poids_cible_kg"],
+                "objectif": client["objectif"], "niveau": client["niveau"],
+                "frequence_entrainement_semaine": int(client["frequence_entrainement_semaine"]),
+                "calories_quotidiennes": client["calories_quotidiennes"],
+                "proteines_g_par_jour": client["proteines_g_par_jour"],
+                "heures_sommeil": client["heures_sommeil"],
+                "semaines_suivi_prevues": int(client["semaines_suivi_prevues"]),
+                "adherence_programme_pct": client["adherence_programme_pct"],
+            }
+            X_row = build_feature_row(profile, encoders, scaler)
+            proba = float(model.predict_proba(X_row)[0, 1])
+            interpretation = (
+                "Profil favorable" if proba > 0.70
+                else "Profil a risque, ajuster le programme" if proba >= 0.40
+                else "Profil critique, revoir les bases"
+            )
+            pdf_bytes = build_client_pdf(client, weigh_ins, {"proba": proba, "interpretation": interpretation})
+            st.download_button(
+                "Telecharger le resume PDF", data=pdf_bytes,
+                file_name=f"suivi_{client['prenom']}_{client['nom']}.pdf", mime="application/pdf",
+            )
+
+    with tab_ajout:
+        st.write("Ajoutez un vrai client pour commencer son suivi.")
+        with st.form("ajout_client_form"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                prenom = st.text_input("Prenom")
+                nom = st.text_input("Nom")
+                age = st.slider("Age", 18, 80, 30)
+                sexe = st.selectbox("Sexe", ["H", "F"])
+            with col2:
+                taille_cm = st.slider("Taille (cm)", 140, 220, 175)
+                poids_initial_kg = st.number_input("Poids initial (kg)", 40.0, 200.0, 80.0)
+                poids_cible_kg = st.number_input("Poids cible (kg)", 40.0, 200.0, 75.0)
+                objectif = st.selectbox("Objectif", ["seche", "prise_masse", "recomposition"])
+                niveau = st.selectbox("Niveau", ["debutant", "intermediaire", "avance"])
+            with col3:
+                frequence_entrainement_semaine = st.slider("Frequence d'entrainement/semaine", 1, 7, 4)
+                calories_quotidiennes = st.number_input("Calories quotidiennes", 1000, 6000, 2200)
+                proteines_g_par_jour = st.number_input("Proteines (g/jour)", 40, 400, 160)
+                heures_sommeil = st.slider("Heures de sommeil", 3.0, 12.0, 7.0, step=0.5)
+                semaines_suivi_prevues = st.slider("Semaines de suivi prevues", 1, 52, 12)
+                adherence_programme_pct = st.slider("Adherence estimee (%)", 0, 100, 75)
+
+            submitted_ajout = st.form_submit_button("Ajouter ce client")
+
+        if submitted_ajout:
+            if not prenom or not nom:
+                st.error("Prenom et nom sont obligatoires.")
+            else:
+                new_id = db.add_client({
+                    "prenom": prenom, "nom": nom, "age": age, "sexe": sexe, "taille_cm": taille_cm,
+                    "poids_initial_kg": poids_initial_kg, "poids_cible_kg": poids_cible_kg,
+                    "objectif": objectif, "niveau": niveau,
+                    "frequence_entrainement_semaine": frequence_entrainement_semaine,
+                    "calories_quotidiennes": calories_quotidiennes,
+                    "proteines_g_par_jour": proteines_g_par_jour, "heures_sommeil": heures_sommeil,
+                    "semaines_suivi_prevues": semaines_suivi_prevues,
+                    "adherence_programme_pct": adherence_programme_pct,
+                })
+                st.success(f"Client ajoute : {new_id}. Retrouvez-le dans l'onglet \"Mes clients\".")
+
+    with tab_suivi:
+        clients_df = db.get_all_clients()
+        actifs_df = clients_df[clients_df["actif"] == 1] if not clients_df.empty else clients_df
+        if actifs_df.empty:
+            st.write("Aucun client actif. Ajoutez-en un dans l'onglet \"Ajouter un client\".")
+        else:
+            selected_id_suivi = st.selectbox(
+                "Client", actifs_df["client_id"],
+                format_func=lambda cid: f"{cid} - " + actifs_df.set_index('client_id').loc[cid, 'prenom'] + " " + actifs_df.set_index('client_id').loc[cid, 'nom'],
+                key="select_suivi",
+            )
+            poids_semaine = st.number_input("Poids releve cette semaine (kg)", 30.0, 250.0, 75.0)
+            note_semaine = st.text_input("Note (optionnel)", "")
+            if st.button("Enregistrer la pesee"):
+                db.add_weigh_in(selected_id_suivi, poids_semaine, note_semaine)
+                st.success("Pesee enregistree.")
+
+            st.subheader("Historique")
+            st.dataframe(db.get_weigh_ins(selected_id_suivi), use_container_width=True)
+
+    with tab_reentrainement:
+        st.write(
+            f"Le modele peut etre reentraine en integrant vos clients reels dont l'issue "
+            f"est connue (objectif atteint ou non). Un minimum de {MIN_REAL_CLIENTS} clients "
+            f"labellises est requis pour eviter un reentrainement instable."
+        )
+        labelled = db.get_labelled_clients()
+        st.metric("Clients reels labellises disponibles", len(labelled))
+
+        if st.button("Lancer le reentrainement"):
+            with st.spinner("Reentrainement en cours (GridSearchCV sur 4 modeles)..."):
+                result = run_retrain()
+
+            if result["status"] == "skipped":
+                st.warning(result["reason"])
+            elif result["status"] == "promoted":
+                st.success(
+                    f"Nouveau modele promu en production : **{result['new_winner_label']}**. "
+                    f"Score composite : {result['old_score']:.4f} -> {result['new_score']:.4f} "
+                    f"({result['n_real_clients']} clients reels integres)."
+                )
+            else:
+                st.error(
+                    f"Reentrainement rejete : le nouveau score ({result['new_score']:.4f}) est "
+                    f"inferieur a l'actuel ({result['old_score']:.4f}). Le modele en production "
+                    "n'a pas ete modifie. Continuez a collecter des donnees reelles."
+                )

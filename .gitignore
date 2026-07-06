@@ -5,3 +5,7 @@ __pycache__/
 .streamlit/
 *.egg-info/
 .DS_Store
+
+# Donnees personnelles reelles - ne jamais publier (voir docs/RGPD_AI_ACT si reintroduit)
+data/coaching.db
+models/retrain_candidate_results.json

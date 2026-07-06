@@ -88,7 +88,7 @@ MODEL_SPECS = {
 }
 
 
-def train_one_model(key: str, spec: dict, X_train, X_test, y_train, y_test) -> dict:
+def train_one_model(key: str, spec: dict, X_train, X_test, y_train, y_test, models_dir: Path = MODELS_DIR) -> dict:
     print(f"\n=== Entrainement : {spec['label']} ===")
     cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
 
@@ -137,7 +137,8 @@ def train_one_model(key: str, spec: dict, X_train, X_test, y_train, y_test) -> d
         },
     }
 
-    joblib.dump(best_model, MODELS_DIR / f"{key}.pkl")
+    models_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(best_model, models_dir / f"{key}.pkl")
 
     print(f"  Meilleurs parametres : {grid.best_params_}")
     print(f"  Accuracy={results['accuracy']:.3f}  F1={results['f1_weighted']:.3f}  "
@@ -146,18 +147,20 @@ def train_one_model(key: str, spec: dict, X_train, X_test, y_train, y_test) -> d
     return results
 
 
-def run_training() -> dict:
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    X_train, X_test, y_train, y_test = load_data()
+def run_training(X_train=None, X_test=None, y_train=None, y_test=None,
+                  models_dir: Path = MODELS_DIR, results_path: Path = RESULTS_PATH) -> dict:
+    models_dir.mkdir(parents=True, exist_ok=True)
+    if X_train is None:
+        X_train, X_test, y_train, y_test = load_data()
 
     all_results = {}
     for key, spec in MODEL_SPECS.items():
-        all_results[key] = train_one_model(key, spec, X_train, X_test, y_train, y_test)
+        all_results[key] = train_one_model(key, spec, X_train, X_test, y_train, y_test, models_dir=models_dir)
 
-    with open(RESULTS_PATH, "w", encoding="utf-8") as f:
+    with open(results_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2, ensure_ascii=False)
 
-    print(f"\nResultats d'entrainement sauvegardes -> {RESULTS_PATH}")
+    print(f"\nResultats d'entrainement sauvegardes -> {results_path}")
     return all_results
 
 
