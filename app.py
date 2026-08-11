@@ -20,6 +20,7 @@ from etl import CAT_COLS, FEATURE_COLUMNS, NUM_COLS, TARGET_COL  # noqa: E402
 from predict import build_feature_row, load_artifacts  # noqa: E402
 from report import build_client_pdf  # noqa: E402
 from retrain_with_real_data import MIN_REAL_CLIENTS, run_retrain  # noqa: E402
+from seed_demo_clients import seed_demo_clients  # noqa: E402
 
 st.set_page_config(page_title="Coaching ML - builtbyarthur", page_icon="💪", layout="wide")
 
@@ -29,6 +30,11 @@ RESULTS_PATH = ROOT_DIR / "models" / "results.json"
 ARCHITECTURE_PNG = ROOT_DIR / "docs" / "architecture_diagram.png"
 SELECTION_REPORT = ROOT_DIR / "docs" / "MODEL_SELECTION_REPORT.md"
 RGPD_AI_ACT_DOC = ROOT_DIR / "docs" / "RGPD_AI_ACT.md"
+
+_secrets_file_exists = (ROOT_DIR / ".streamlit" / "secrets.toml").exists()
+DEMO_MODE = bool(st.secrets.get("DEMO_MODE", False)) if _secrets_file_exists else False
+if DEMO_MODE and db.get_all_clients().empty:
+    seed_demo_clients(verbose=False)
 
 st.markdown(
     """
@@ -158,6 +164,11 @@ else:
 # ----------------------------------------------------------------------------
 if page == "Accueil":
     render_header("Accueil", "Vue d'ensemble de votre activite de coaching")
+    if DEMO_MODE:
+        st.caption(
+            "🎭 Mode demo : les clients affiches sont des profils fictifs generes pour "
+            "illustrer le fonctionnement de l'application, pas de vrais clients."
+        )
 
     clients_df = db.get_all_clients()
     if clients_df.empty:
@@ -222,6 +233,11 @@ if page == "Accueil":
 # ----------------------------------------------------------------------------
 elif page == "Mes clients":
     render_header("Mes clients", "Gestion des clients reels, suivi hebdomadaire et export")
+    if DEMO_MODE:
+        st.caption(
+            "🎭 Mode demo : les clients ci-dessous sont des profils fictifs generes pour "
+            "illustrer le fonctionnement de l'application, pas de vrais clients."
+        )
 
     tab_liste, tab_ajout, tab_suivi = st.tabs(["Mes clients", "Ajouter un client", "Suivi hebdomadaire"])
 

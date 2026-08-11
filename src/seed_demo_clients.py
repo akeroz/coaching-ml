@@ -1,8 +1,12 @@
-"""Script ponctuel (hors pipeline) pour peupler data/coaching.db avec des profils
-clients fictifs varies, utiles pour tester l'interface "Mes clients" (fiche client,
-indicateurs de progression, export PDF, cloture) avant d'avoir de vrais clients.
+"""Profils clients fictifs varies, utilises pour peupler data/coaching.db a des fins
+de demonstration (interface "Mes clients" : fiche client, indicateurs de progression,
+export PDF, cloture) - jamais de personne reelle.
 
-A executer une seule fois : python src/seed_demo_clients.py"""
+Utilisation :
+- En script ponctuel : python src/seed_demo_clients.py
+- Importe automatiquement par app.py sur l'instance Streamlit Cloud (DEMO_MODE=true
+  dans les secrets), pour repeupler une base vide apres un redemarrage de conteneur
+  (le stockage de Streamlit Cloud n'est pas garanti persistant)."""
 
 from datetime import date, timedelta
 
@@ -86,7 +90,8 @@ PROFILES = [
 ]
 
 
-def main():
+def seed_demo_clients(verbose: bool = True) -> list[str]:
+    """Cree les profils fictifs de demonstration. Retourne la liste des client_id crees."""
     created = []
     for entry in PROFILES:
         profile = entry["profile"]
@@ -102,11 +107,15 @@ def main():
             days_ago = (n_points - 1 - i) * 7  # une pesee par semaine, la plus recente = aujourd'hui
             db.add_weigh_in(client_id, poids, note=entry["note"] if i == 0 else "", date_saisie=d(days_ago))
 
-        created.append((client_id, profile["prenom"], profile["nom"]))
-        print(f"Cree : {client_id} - {profile['prenom']} {profile['nom']} ({entry['note']})")
+        created.append(client_id)
+        if verbose:
+            print(f"Cree : {client_id} - {profile['prenom']} {profile['nom']} ({entry['note']})")
 
-    print(f"\n{len(created)} clients de demonstration crees dans data/coaching.db")
+    if verbose:
+        print(f"\n{len(created)} clients de demonstration crees dans data/coaching.db")
+
+    return created
 
 
 if __name__ == "__main__":
-    main()
+    seed_demo_clients()
