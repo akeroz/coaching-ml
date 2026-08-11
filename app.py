@@ -117,6 +117,23 @@ def predict_for_client(client: pd.Series, model, scaler, encoders) -> dict:
     return {"proba": proba, "interpretation": interpretation}
 
 
+def compute_progress_status(client: pd.Series, poids_actuel: float) -> dict:
+    """Statut de progression base sur le rapprochement (ou l'eloignement) du poids
+    cible, quel que soit l'objectif (seche/prise_masse/recomposition) - fonctionne
+    de facon uniforme sans logique specifique par type d'objectif."""
+    poids_initial = client["poids_initial_kg"]
+    poids_cible = client["poids_cible_kg"]
+    distance_initiale = abs(poids_initial - poids_cible)
+    distance_actuelle = abs(poids_actuel - poids_cible)
+    ecart = distance_initiale - distance_actuelle  # positif = rapprochement du but
+
+    if abs(ecart) < 0.15:
+        return {"icone": "⚪", "libelle": "Stable", "couleur": "gray"}
+    if ecart > 0:
+        return {"icone": "🟢", "libelle": "En progression", "couleur": "green"}
+    return {"icone": "🔴", "libelle": "En regression", "couleur": "red"}
+
+
 ESPACE_COACH = ["Accueil", "Mes clients", "Prediction en temps reel"]
 ESPACE_TECHNIQUE = [
     "Presentation du projet",
@@ -213,13 +230,21 @@ elif page == "Mes clients":
         if clients_df.empty:
             st.write("Aucun client enregistre pour le moment. Utilisez l'onglet \"Ajouter un client\".")
         else:
-            st.dataframe(
-                clients_df[[
-                    "client_id", "prenom", "nom", "objectif", "niveau", "poids_initial_kg",
-                    "poids_cible_kg", "date_creation", "objectif_atteint", "actif",
-                ]],
-                use_container_width=True,
-            )
+            apercu_rows = []
+            for _, c in clients_df.iterrows():
+                w = db.get_weigh_ins(c["client_id"])
+                poids_actuel = w.iloc[-1]["poids"] if not w.empty else c["poids_initial_kg"]
+                statut = compute_progress_status(c, poids_actuel)
+                apercu_rows.append({
+                    "client_id": c["client_id"], "prenom": c["prenom"], "nom": c["nom"],
+                    "objectif": c["objectif"], "niveau": c["niveau"],
+                    "poids_initial_kg": c["poids_initial_kg"], "poids_cible_kg": c["poids_cible_kg"],
+                    "tendance": f"{statut['icone']} {statut['libelle']}",
+                    "date_creation": c["date_creation"], "objectif_atteint": c["objectif_atteint"],
+                    "actif": c["actif"],
+                })
+            st.dataframe(pd.DataFrame(apercu_rows), use_container_width=True, hide_index=True)
+            st.caption("🟢 se rapproche du poids cible - 🔴 s'en eloigne - ⚪ stable (variation < 150g).")
 
             st.subheader("Fiche client")
             selected_id = st.selectbox(
@@ -228,6 +253,8 @@ elif page == "Mes clients":
             )
             client = db.get_client(selected_id)
             weigh_ins = db.get_weigh_ins(selected_id)
+            poids_actuel = weigh_ins.iloc[-1]["poids"] if not weigh_ins.empty else client["poids_initial_kg"]
+            statut = compute_progress_status(client, poids_actuel)
 
             col1, col2 = st.columns([2, 1])
             with col1:
@@ -238,9 +265,54 @@ elif page == "Mes clients":
                                   annotation_text="Objectif")
                     st.plotly_chart(fig, use_container_width=True)
             with col2:
+                st.markdown(f"### {statut['icone']} {statut['libelle']}")
                 st.metric("Poids initial", f"{client['poids_initial_kg']} kg")
-                st.metric("Poids actuel", f"{weigh_ins.iloc[-1]['poids']} kg" if not weigh_ins.empty else "N/A")
+                st.metric(
+                    "Poids actuel", f"{poids_actuel} kg" if not weigh_ins.empty else "N/A",
+                    delta=f"{poids_actuel - client['poids_initial_kg']:+.1f} kg" if not weigh_ins.empty else None,
+                    delta_color="off",
+                )
                 st.metric("Poids cible", f"{client['poids_cible_kg']} kg")
+
+            st.subheader("Modifier les informations")
+            with st.expander("Corriger une erreur de saisie"):
+                with st.form(f"edit_form_{selected_id}"):
+                    ecol1, ecol2, ecol3 = st.columns(3)
+                    with ecol1:
+                        e_prenom = st.text_input("Prenom", value=client["prenom"])
+                        e_nom = st.text_input("Nom", value=client["nom"])
+                        e_age = st.slider("Age", 18, 80, int(client["age"]))
+                        e_sexe = st.selectbox("Sexe", ["H", "F"], index=["H", "F"].index(client["sexe"]))
+                    with ecol2:
+                        e_taille = st.slider("Taille (cm)", 140, 220, int(client["taille_cm"]))
+                        e_poids_initial = st.number_input("Poids initial (kg)", 40.0, 200.0, float(client["poids_initial_kg"]))
+                        e_poids_cible = st.number_input("Poids cible (kg)", 40.0, 200.0, float(client["poids_cible_kg"]))
+                        e_objectif = st.selectbox(
+                            "Objectif", ["seche", "prise_masse", "recomposition"],
+                            index=["seche", "prise_masse", "recomposition"].index(client["objectif"]),
+                        )
+                        e_niveau = st.selectbox(
+                            "Niveau", ["debutant", "intermediaire", "avance"],
+                            index=["debutant", "intermediaire", "avance"].index(client["niveau"]),
+                        )
+                    with ecol3:
+                        e_freq = st.slider("Frequence d'entrainement/semaine", 1, 7, int(client["frequence_entrainement_semaine"]))
+                        e_calories = st.number_input("Calories quotidiennes", 1000, 6000, int(client["calories_quotidiennes"]))
+                        e_proteines = st.number_input("Proteines (g/jour)", 40, 400, int(client["proteines_g_par_jour"]))
+                        e_sommeil = st.slider("Heures de sommeil", 3.0, 12.0, float(client["heures_sommeil"]), step=0.5)
+                        e_semaines = st.slider("Semaines de suivi prevues", 1, 52, int(client["semaines_suivi_prevues"]))
+                        e_adherence = st.slider("Adherence estimee (%)", 0, 100, int(client["adherence_programme_pct"]))
+
+                    if st.form_submit_button("Enregistrer les modifications"):
+                        db.update_client(selected_id, {
+                            "prenom": e_prenom, "nom": e_nom, "age": e_age, "sexe": e_sexe,
+                            "taille_cm": e_taille, "poids_initial_kg": e_poids_initial,
+                            "poids_cible_kg": e_poids_cible, "objectif": e_objectif, "niveau": e_niveau,
+                            "frequence_entrainement_semaine": e_freq, "calories_quotidiennes": e_calories,
+                            "proteines_g_par_jour": e_proteines, "heures_sommeil": e_sommeil,
+                            "semaines_suivi_prevues": e_semaines, "adherence_programme_pct": e_adherence,
+                        })
+                        st.success("Informations mises a jour. Rechargez la page pour voir les changements.")
 
             st.subheader("Cloturer le suivi")
             col_a, col_b, col_c = st.columns(3)

@@ -105,6 +105,22 @@ def add_client(profile: dict) -> str:
         return client_id
 
 
+EDITABLE_FIELDS = [
+    "prenom", "nom", "age", "sexe", "taille_cm", "poids_initial_kg", "poids_cible_kg",
+    "objectif", "niveau", "frequence_entrainement_semaine", "calories_quotidiennes",
+    "proteines_g_par_jour", "heures_sommeil", "semaines_suivi_prevues", "adherence_programme_pct",
+]
+
+
+def update_client(client_id: str, profile: dict):
+    """Met a jour les informations d'un client existant (correction d'une erreur de saisie)."""
+    init_db()
+    with get_connection() as conn:
+        set_clause = ", ".join(f"{field} = ?" for field in EDITABLE_FIELDS)
+        values = [profile[field] for field in EDITABLE_FIELDS] + [client_id]
+        conn.execute(f"UPDATE clients SET {set_clause} WHERE client_id = ?", values)
+
+
 def update_client_status(client_id: str, actif: bool = True, objectif_atteint: int | None = None):
     init_db()
     with get_connection() as conn:
@@ -124,12 +140,12 @@ def delete_client(client_id: str):
         conn.execute("DELETE FROM clients WHERE client_id = ?", (client_id,))
 
 
-def add_weigh_in(client_id: str, poids: float, note: str = ""):
+def add_weigh_in(client_id: str, poids: float, note: str = "", date_saisie: str | None = None):
     init_db()
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) VALUES (?, ?, ?, ?)",
-            (client_id, date.today().isoformat(), poids, note),
+            (client_id, date_saisie or date.today().isoformat(), poids, note),
         )
 
 
