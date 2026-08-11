@@ -10,6 +10,8 @@ Utilisation :
 
 from datetime import date, timedelta
 
+from sqlalchemy import text
+
 import db
 
 TODAY = date.today()
@@ -100,7 +102,7 @@ def seed_demo_clients(verbose: bool = True) -> list[str]:
         # add_client() insere deja une premiere pesee "aujourd'hui" avec le poids initial ;
         # on la remplace par un historique etale sur les semaines precedentes.
         with db.get_connection() as conn:
-            conn.execute("DELETE FROM suivis_hebdo WHERE client_id = ?", (client_id,))
+            conn.execute(text("DELETE FROM suivis_hebdo WHERE client_id = :client_id"), {"client_id": client_id})
 
         n_points = len(entry["poids_history"])
         for i, poids in enumerate(entry["poids_history"]):

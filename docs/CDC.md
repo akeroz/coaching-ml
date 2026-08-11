@@ -39,8 +39,9 @@ Hors perimetre (v1) :
 - Streamlit pour l'interface utilisateur.
 - Plotly / Matplotlib pour la data visualisation.
 - Stockage du dataset d'entrainement en local (CSV, pickle) ; stockage des
-  vrais clients dans une base SQLite locale (`data/coaching.db`), separee et
-  exclue du depot de code (voir `docs/RGPD_AI_ACT.md`).
+  vrais clients dans une base de donnees hebergee dediee (Postgres), separee
+  du code et accessible uniquement via une chaine de connexion secrete
+  (voir `docs/RGPD_AI_ACT.md`) - permet l'acces depuis plusieurs appareils.
 
 ## Veille technologique et reglementaire
 
@@ -56,8 +57,8 @@ impactant le projet :
 - **Technique (EN)** : documentation scikit-learn (choix et comparaison de
   modeles), release notes XGBoost (nouvelles methodes de gestion des
   categorielles et du GPU training), blog Streamlit (evolutions de
-  `st.connection` pour la persistance de donnees, pertinent pour une
-  migration future de SQLite vers une base geree).
+  `st.connection` et bonnes pratiques de connexion a une base geree,
+  utilisees lors de la migration de SQLite local vers Postgres/Supabase).
 
 Cette veille a directement influence deux decisions du projet : le choix de
 ne pas utiliser de decision automatisee (anticipation des obligations de
@@ -72,8 +73,8 @@ design, plutot qu'une mise en conformite a posteriori).
 - **Maintenable sans competences DevOps** : pas de conteneurisation, pas de CI/CD complexe,
   un seul point d'entree (`streamlit run app.py`).
 - Respect des principes RGPD : separation stricte entre le dataset synthetique
-  (public) et les vraies donnees clients (`data/coaching.db`, prive, jamais
-  publie) - voir `docs/RGPD_AI_ACT.md`.
+  (public) et les vraies donnees clients (base hebergee privee, acces
+  restreint, secret de connexion jamais publie) - voir `docs/RGPD_AI_ACT.md`.
 - Accessibilite WCAG AA (voir `PROJECT_MANAGEMENT.md`).
 
 ## Livrables et criteres d'acceptation

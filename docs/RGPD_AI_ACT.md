@@ -17,18 +17,29 @@ Le projet distingue deux mondes de donnees totalement separes :
 | Composant | Contenu | Statut |
 |---|---|---|
 | `data/raw/clients_raw.csv`, `data/processed/dataset_final.csv` | Dataset **synthetique** (600 profils generes, aucune personne reelle) | Public (depot GitHub, demo Streamlit Cloud) |
-| `data/coaching.db` (SQLite) | Vrais clients du coach (prenom, nom, profil, suivi hebdomadaire de poids) | **Prive**, exclu du depot via `.gitignore`, jamais publie |
+| Base de donnees hebergee (Postgres, ex. Supabase) | Vrais clients du coach (prenom, nom, profil, suivi hebdomadaire de poids) | **Privee** : chaine de connexion secrete (jamais committee), acces a l'application restreint |
 
-Cette separation n'est pas qu'une precaution theorique : `src/db.py` est le
-seul module qui lit/ecrit `data/coaching.db`, et ce fichier ne quitte jamais
-la machine du coach (il n'est ni commite, ni deploye sur Streamlit Cloud avec
-le reste du code). Le pipeline ML (`etl.py`, `train.py`, `select_model.py`,
-`predict.py`) ne touche que le dataset synthetique et les modeles entraines
-dessus ; le module de reentrainement (`retrain_with_real_data.py`) est le
-seul pont entre les deux mondes, et il n'exporte que des **agregats
-statistiques anonymises** (features numeriques + issue objectif_atteint) vers
-le nouveau dataset d'entrainement — jamais le prenom, le nom, ni aucun
-detail identifiant.
+Historique : en v1, cette base etait un fichier SQLite strictement local
+(`data/coaching.db`), jamais deploye. Pour permettre un acces depuis
+plusieurs appareils (telephone, autre ordinateur) sans sacrifier la
+separation des donnees, elle a migre vers une base hebergee dediee. Le
+principe de separation est preserve par d'autres moyens :
+
+- **Secret de connexion** (`DATABASE_URL`) jamais commite (`.gitignore`),
+  fourni via variable d'environnement locale (`.env`) ou secrets Streamlit
+  Cloud - `src/db.py` est le seul module qui s'y connecte ;
+- **Acces a l'application restreint** (Streamlit Cloud, "Only specific
+  people can view this app") : meme hebergee, la base n'est atteignable
+  qu'a travers l'application, elle-meme reservee au coach ;
+- **Chiffrement au repos et en transit** assure par l'hebergeur (connexion
+  TLS, chiffrement disque cote fournisseur) ;
+- Le pipeline ML (`etl.py`, `train.py`, `select_model.py`, `predict.py`) ne
+  touche toujours que le dataset synthetique et les modeles entraines
+  dessus ; le module de reentrainement (`retrain_with_real_data.py`) reste
+  le seul pont entre les deux mondes, et n'exporte que des **agregats
+  statistiques anonymises** (features numeriques + issue objectif_atteint)
+  vers le dataset d'entrainement - jamais le prenom, le nom, ni aucun
+  detail identifiant.
 
 ### 1.3 Minimisation (art. 5.1.c)
 
@@ -39,7 +50,7 @@ alimentent, le cas echeant, un reentrainement — jamais son prenom/nom.
 
 ### 1.4 Duree de conservation
 
-Un client reel est conserve dans `data/coaching.db` pour la duree du suivi
+Un client reel est conserve dans la base hebergee pour la duree du suivi
 coaching plus une periode raisonnable d'analyse de la progression (ex. 12
 mois apres la fin du suivi), puis supprime (fonction `db.delete_client`,
 deja implementee et utilisable depuis l'application) ou ses donnees
@@ -66,11 +77,14 @@ genere pour chaque client (`src/report.py`).
 
 ### 1.7 Securite
 
-`data/coaching.db` est le seul point de stockage de donnees personnelles
-reelles ; il reste local, exclu du depot Git, et n'est jamais transmis a un
-tiers. Le reentrainement (`retrain_with_real_data.py`) lit ce fichier en
-lecture seule et n'ecrit que des artefacts anonymises (modeles, dataset
-agrege) dans `models/` et `data/processed/`.
+La base de donnees hebergee est le seul point de stockage de donnees
+personnelles reelles. Mesures en place : chaine de connexion en secret
+(jamais commite, jamais codee en dur), acces a l'application restreint a
+un seul compte, chiffrement en transit (TLS) et au repos assure par
+l'hebergeur. Le reentrainement (`retrain_with_real_data.py`) lit cette
+base en lecture seule et n'ecrit que des artefacts anonymises (modeles,
+dataset agrege) dans `models/` et `data/processed/` - jamais de donnee
+d'identite n'est copiee ailleurs.
 
 ## 2. AI Act (reglement europeen sur l'intelligence artificielle)
 

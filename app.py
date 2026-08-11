@@ -1,6 +1,7 @@
 """Dashboard Streamlit - Prediction de progression coaching fitness (@builtbyarthur)."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -32,7 +33,20 @@ SELECTION_REPORT = ROOT_DIR / "docs" / "MODEL_SELECTION_REPORT.md"
 RGPD_AI_ACT_DOC = ROOT_DIR / "docs" / "RGPD_AI_ACT.md"
 
 _secrets_file_exists = (ROOT_DIR / ".streamlit" / "secrets.toml").exists()
-DEMO_MODE = bool(st.secrets.get("DEMO_MODE", False)) if _secrets_file_exists else False
+if _secrets_file_exists:
+    if "DATABASE_URL" in st.secrets:
+        os.environ.setdefault("DATABASE_URL", st.secrets["DATABASE_URL"])
+    DEMO_MODE = bool(st.secrets.get("DEMO_MODE", False))
+else:
+    DEMO_MODE = False
+
+if "DATABASE_URL" not in os.environ:
+    st.error(
+        "DATABASE_URL n'est pas configuree. En local, creez un fichier .env "
+        "(voir .env.example). Sur Streamlit Cloud, ajoutez DATABASE_URL dans les Secrets."
+    )
+    st.stop()
+
 if DEMO_MODE and db.get_all_clients().empty:
     seed_demo_clients(verbose=False)
 
@@ -538,9 +552,10 @@ elif page == "Presentation du projet":
 
     st.header("Conformite RGPD & AI Act")
     st.write(
-        "Les vrais clients (espace \"Mes clients\") sont stockes localement dans "
-        "data/coaching.db, exclu du depot de code et jamais publie - separe du "
-        "dataset synthetique utilise pour l'entrainement initial. Le systeme est "
+        "Les vrais clients (espace \"Mes clients\") sont stockes dans une base de "
+        "donnees hebergee dediee, dont la connexion est protegee par un secret "
+        "(jamais commite) et dont l'acces a l'application est restreint - separee du "
+        "dataset synthetique public utilise pour l'entrainement initial. Le systeme est "
         "classe a risque minimal au sens de l'AI Act (pas de decision automatisee, "
         "supervision humaine du coach maintenue, y compris lors du reentrainement)."
     )
@@ -855,19 +870,20 @@ elif page == "Gestion de projet":
 
     st.subheader("Automatisation du reentrainement : GitHub Actions vs tache planifiee locale vs manuel")
     st.dataframe(pd.DataFrame({
-        "Critere": ["Cout", "Compatible confidentialite (coaching.db local)", "Simplicite de mise en place", "Adapte au volume de clients actuel", "Total /20"],
-        "GitHub Actions (cloud)": [5, 1, 4, 2, 12],
+        "Critere": ["Cout", "Techniquement possible (base hebergee accessible)", "Simplicite de mise en place", "Adapte au volume de clients actuel", "Total /20"],
+        "GitHub Actions (cloud)": [5, 5, 4, 2, 16],
         "Tache planifiee locale (Task Scheduler)": [5, 5, 2, 2, 14],
         "Declenchement manuel (retenu)": [5, 5, 5, 5, 20],
     }), use_container_width=True, hide_index=True)
     st.caption(
-        "Decision : declenchement manuel. GitHub Actions a ete ecarte car il n'a jamais acces a "
-        "data/coaching.db (jamais commite, pour des raisons de confidentialite - voir "
-        "docs/RGPD_AI_ACT.md), ce qui rendrait le reentrainement automatique inoperant en pratique. "
-        "Une tache planifiee locale resoudrait ce probleme mais ajoute une complexite "
-        "(planification, gestion d'erreurs, credentials Git) disproportionnee par rapport au "
-        "volume actuel de clients reels labellises. Le bouton manuel suffit tant que ce volume "
-        "reste faible ; l'automatisation locale reste une evolution possible si l'usage grandit."
+        "Decision : declenchement manuel, malgre le fait que la migration vers une base "
+        "hebergee (Supabase) rende desormais GitHub Actions techniquement viable (contrairement "
+        "a la version precedente ou coaching.db etait un fichier local inaccessible depuis le "
+        "cloud). Au volume actuel de clients reels labellises, automatiser ajouterait une "
+        "complexite (planification, gestion d'erreurs, secrets CI) sans benefice reel. "
+        "Cette decision est reevaluee a chaque changement de contrainte plutot que figee : "
+        "l'automatisation GitHub Actions redevient l'option recommandee des que le volume de "
+        "clients rendra le clic manuel penible."
     )
 
     st.header("Retrospective")

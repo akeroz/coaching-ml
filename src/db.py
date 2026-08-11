@@ -1,23 +1,27 @@
 """Couche de persistance pour les VRAIS clients du coach (distincte du dataset
 synthetique utilise pour l'entrainement du modele).
 
-Le fichier data/coaching.db contient des donnees personnelles reelles des lors
-qu'il est utilise en production : il est deliberement exclu du depot Git
-(.gitignore) et ne doit jamais etre partage publiquement (voir docs/RGPD_AI_ACT
-pour les principes appliques, notamment la minimisation et la separation des
-donnees d'entrainement / donnees d'identite)."""
+Base de donnees hebergee (Postgres, ex. Supabase) plutot que fichier local : c'est
+ce qui permet d'acceder aux memes donnees depuis n'importe quel appareil (telephone,
+autre ordinateur). La chaine de connexion (DATABASE_URL) est un secret : jamais
+committee, jamais codee en dur - lue depuis une variable d'environnement (fichier
+.env local, gitignore) ou depuis les secrets Streamlit Cloud en production. Voir
+docs/RGPD_AI_ACT.md pour le detail des mesures de securite (acces restreint a
+l'application, chiffrement au repos assure par l'hebergeur, aucune donnee
+d'identite dans le dataset d'entrainement)."""
 
 from __future__ import annotations
 
-import sqlite3
+import os
 from contextlib import contextmanager
 from datetime import date
-from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT_DIR / "data" / "coaching.db"
+load_dotenv()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS clients (
@@ -43,36 +47,52 @@ CREATE TABLE IF NOT EXISTS clients (
 );
 
 CREATE TABLE IF NOT EXISTS suivis_hebdo (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id TEXT NOT NULL,
+    id SERIAL PRIMARY KEY,
+    client_id TEXT NOT NULL REFERENCES clients (client_id),
     date_saisie TEXT NOT NULL,
     poids REAL NOT NULL,
-    note TEXT,
-    FOREIGN KEY (client_id) REFERENCES clients (client_id)
+    note TEXT
 );
 """
+
+_engine: Engine | None = None
+
+
+def get_database_url() -> str:
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL n'est pas configuree. En local, definissez-la dans un "
+            "fichier .env (voir .env.example). Sur Streamlit Cloud, ajoutez-la dans "
+            "les Secrets de l'application."
+        )
+    return url
+
+
+def get_engine() -> Engine:
+    global _engine
+    if _engine is None:
+        _engine = create_engine(get_database_url(), pool_pre_ping=True)
+    return _engine
 
 
 @contextmanager
 def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
+    with get_engine().begin() as conn:
         yield conn
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def init_db():
     with get_connection() as conn:
-        conn.executescript(SCHEMA)
+        for statement in SCHEMA.strip().split(";\n\n"):
+            statement = statement.strip()
+            if statement:
+                conn.execute(text(statement))
 
 
 def _next_client_id(conn) -> str:
-    row = conn.execute("SELECT COUNT(*) FROM clients").fetchone()
-    return f"REAL_{row[0] + 1:03d}"
+    count = conn.execute(text("SELECT COUNT(*) FROM clients")).scalar()
+    return f"REAL_{count + 1:03d}"
 
 
 def add_client(profile: dict) -> str:
@@ -81,26 +101,26 @@ def add_client(profile: dict) -> str:
     with get_connection() as conn:
         client_id = _next_client_id(conn)
         conn.execute(
-            """INSERT INTO clients (
+            text("""INSERT INTO clients (
                 client_id, prenom, nom, age, sexe, taille_cm, poids_initial_kg,
                 poids_cible_kg, objectif, niveau, frequence_entrainement_semaine,
                 calories_quotidiennes, proteines_g_par_jour, heures_sommeil,
                 semaines_suivi_prevues, adherence_programme_pct, date_creation,
                 objectif_atteint, actif
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)""",
-            (
-                client_id, profile["prenom"], profile["nom"], profile["age"],
-                profile["sexe"], profile["taille_cm"], profile["poids_initial_kg"],
-                profile["poids_cible_kg"], profile["objectif"], profile["niveau"],
-                profile["frequence_entrainement_semaine"], profile["calories_quotidiennes"],
-                profile["proteines_g_par_jour"], profile["heures_sommeil"],
-                profile["semaines_suivi_prevues"], profile["adherence_programme_pct"],
-                date.today().isoformat(),
-            ),
+            ) VALUES (
+                :client_id, :prenom, :nom, :age, :sexe, :taille_cm, :poids_initial_kg,
+                :poids_cible_kg, :objectif, :niveau, :frequence_entrainement_semaine,
+                :calories_quotidiennes, :proteines_g_par_jour, :heures_sommeil,
+                :semaines_suivi_prevues, :adherence_programme_pct, :date_creation,
+                NULL, 1
+            )"""),
+            {**profile, "client_id": client_id, "date_creation": date.today().isoformat()},
         )
         conn.execute(
-            "INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) VALUES (?, ?, ?, ?)",
-            (client_id, date.today().isoformat(), profile["poids_initial_kg"], "Poids de depart"),
+            text("INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) "
+                 "VALUES (:client_id, :date_saisie, :poids, :note)"),
+            {"client_id": client_id, "date_saisie": date.today().isoformat(),
+             "poids": profile["poids_initial_kg"], "note": "Poids de depart"},
         )
         return client_id
 
@@ -116,9 +136,10 @@ def update_client(client_id: str, profile: dict):
     """Met a jour les informations d'un client existant (correction d'une erreur de saisie)."""
     init_db()
     with get_connection() as conn:
-        set_clause = ", ".join(f"{field} = ?" for field in EDITABLE_FIELDS)
-        values = [profile[field] for field in EDITABLE_FIELDS] + [client_id]
-        conn.execute(f"UPDATE clients SET {set_clause} WHERE client_id = ?", values)
+        set_clause = ", ".join(f"{field} = :{field}" for field in EDITABLE_FIELDS)
+        params = {field: profile[field] for field in EDITABLE_FIELDS}
+        params["client_id"] = client_id
+        conn.execute(text(f"UPDATE clients SET {set_clause} WHERE client_id = :client_id"), params)
 
 
 def update_client_status(client_id: str, actif: bool = True, objectif_atteint: int | None = None):
@@ -126,33 +147,39 @@ def update_client_status(client_id: str, actif: bool = True, objectif_atteint: i
     with get_connection() as conn:
         if objectif_atteint is not None:
             conn.execute(
-                "UPDATE clients SET actif = ?, objectif_atteint = ? WHERE client_id = ?",
-                (int(actif), objectif_atteint, client_id),
+                text("UPDATE clients SET actif = :actif, objectif_atteint = :objectif_atteint "
+                     "WHERE client_id = :client_id"),
+                {"actif": int(actif), "objectif_atteint": objectif_atteint, "client_id": client_id},
             )
         else:
-            conn.execute("UPDATE clients SET actif = ? WHERE client_id = ?", (int(actif), client_id))
+            conn.execute(
+                text("UPDATE clients SET actif = :actif WHERE client_id = :client_id"),
+                {"actif": int(actif), "client_id": client_id},
+            )
 
 
 def delete_client(client_id: str):
     init_db()
     with get_connection() as conn:
-        conn.execute("DELETE FROM suivis_hebdo WHERE client_id = ?", (client_id,))
-        conn.execute("DELETE FROM clients WHERE client_id = ?", (client_id,))
+        conn.execute(text("DELETE FROM suivis_hebdo WHERE client_id = :client_id"), {"client_id": client_id})
+        conn.execute(text("DELETE FROM clients WHERE client_id = :client_id"), {"client_id": client_id})
 
 
 def add_weigh_in(client_id: str, poids: float, note: str = "", date_saisie: str | None = None):
     init_db()
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) VALUES (?, ?, ?, ?)",
-            (client_id, date_saisie or date.today().isoformat(), poids, note),
+            text("INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) "
+                 "VALUES (:client_id, :date_saisie, :poids, :note)"),
+            {"client_id": client_id, "date_saisie": date_saisie or date.today().isoformat(),
+             "poids": poids, "note": note},
         )
 
 
 def get_all_clients() -> pd.DataFrame:
     init_db()
     with get_connection() as conn:
-        return pd.read_sql_query("SELECT * FROM clients ORDER BY date_creation DESC", conn)
+        return pd.read_sql_query(text("SELECT * FROM clients ORDER BY date_creation DESC"), conn)
 
 
 def get_client(client_id: str) -> pd.Series | None:
@@ -165,8 +192,8 @@ def get_weigh_ins(client_id: str) -> pd.DataFrame:
     init_db()
     with get_connection() as conn:
         return pd.read_sql_query(
-            "SELECT * FROM suivis_hebdo WHERE client_id = ? ORDER BY date_saisie",
-            conn, params=(client_id,),
+            text("SELECT * FROM suivis_hebdo WHERE client_id = :client_id ORDER BY date_saisie"),
+            conn, params={"client_id": client_id},
         )
 
 

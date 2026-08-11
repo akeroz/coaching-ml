@@ -26,6 +26,12 @@ venv\Scripts\activate          # Windows
 pip install -r requirements.txt
 ```
 
+La page "Mes clients" a besoin d'une base de donnees hebergee (Postgres, ex.
+Supabase gratuit) pour fonctionner. Copier `.env.example` en `.env` et y
+renseigner votre chaine de connexion (`DATABASE_URL`) - ce fichier n'est
+jamais commite. Sur Streamlit Cloud, la meme variable se configure dans
+Settings > Secrets de l'application.
+
 ## Lancement
 
 ```bash
@@ -45,12 +51,15 @@ python src/architecture_diagram.py
 streamlit run app.py
 ```
 
-Une fois l'application lancee, la page **"Mes clients (usage reel)"** permet
-d'ajouter de vrais clients (stockes localement dans `data/coaching.db`,
-jamais commite - voir `docs/RGPD_AI_ACT.md`), de suivre leur poids semaine
-apres semaine, d'exporter un resume PDF, et de relancer un reentrainement du
-modele integrant ces clients reels des qu'il y en a suffisamment (garde
-anti-regression automatique, voir `src/retrain_with_real_data.py`).
+Une fois l'application lancee, la page **"Mes clients"** permet d'ajouter de
+vrais clients (stockes dans la base hebergee configuree via `DATABASE_URL`,
+jamais dans le depot de code - voir `docs/RGPD_AI_ACT.md`), de suivre leur
+poids semaine apres semaine, d'exporter un resume PDF, et de relancer un
+reentrainement du modele integrant ces clients reels des qu'il y en a
+suffisamment (garde anti-regression automatique, voir
+`src/retrain_with_real_data.py`). La base hebergee permet d'acceder aux
+memes donnees depuis n'importe quel appareil (telephone, autre ordinateur),
+via le lien de l'application (acces restreint au coach).
 
 ## Structure du projet
 
@@ -66,11 +75,11 @@ coaching-ml/
 │   ├── select_model.py             # Selection automatique du meilleur modele
 │   ├── predict.py                  # API de prediction (recharge best_model.pkl)
 │   ├── architecture_diagram.py     # Schema d'architecture (matplotlib)
-│   ├── db.py                       # Persistance SQLite des vrais clients (prive)
+│   ├── db.py                       # Persistance des vrais clients (base hebergee)
 │   ├── report.py                   # Export PDF par client
 │   └── retrain_with_real_data.py   # Reentrainement + garde anti-regression
 ├── models/                      # Modeles entraines, best_model.pkl, results.json
-├── data/coaching.db              # Vrais clients (SQLite, jamais commite)
+├── .env.example                  # Modele de configuration DATABASE_URL (jamais .env reel)
 ├── docs/
 │   ├── CDC.md
 │   ├── ARCHITECTURE.md
@@ -102,9 +111,11 @@ charges (AUC-ROC > 0.75). Detail complet dans `docs/MODEL_SELECTION_REPORT.md`.
 
 - Integration d'une API MyFitnessPal pour recuperer les calories/macros reelles.
 - Notification automatique si un client bascule en "profil a risque".
-- Remplacement progressif du dataset synthetique par des donnees reelles
-  anonymisees issues du suivi client.
-- Version mobile / PWA.
+- Automatisation du reentrainement (GitHub Actions) une fois le volume de
+  clients reels labellises suffisant pour rendre le declenchement manuel
+  penible (voir comparatif dans "Gestion de projet").
+- Interface mobile davantage optimisee (au-dela de la compatibilite Streamlit
+  standard, deja accessible depuis un telephone via la base hebergee).
 
 ## Licence
 
