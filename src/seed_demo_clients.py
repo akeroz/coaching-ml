@@ -1,12 +1,12 @@
-"""Profils clients fictifs varies, utilises pour peupler data/coaching.db a des fins
-de demonstration (interface "Mes clients" : fiche client, indicateurs de progression,
-export PDF, cloture) - jamais de personne reelle.
+"""Profils clients fictifs varies, utilises pour peupler la base de donnees a des
+fins de demonstration (interface "Mes clients" : fiche client, indicateurs de
+progression, export PDF, cloture) - jamais de personne reelle.
 
 Utilisation :
 - En script ponctuel : python src/seed_demo_clients.py
 - Importe automatiquement par app.py sur l'instance Streamlit Cloud (DEMO_MODE=true
-  dans les secrets), pour repeupler une base vide apres un redemarrage de conteneur
-  (le stockage de Streamlit Cloud n'est pas garanti persistant)."""
+  dans les secrets) si la base est vide, pour garantir une demo toujours
+  fonctionnelle sans jamais y placer de vraies donnees client."""
 
 from datetime import date, timedelta
 
@@ -114,7 +114,7 @@ def seed_demo_clients(verbose: bool = True) -> list[str]:
             print(f"Cree : {client_id} - {profile['prenom']} {profile['nom']} ({entry['note']})")
 
     if verbose:
-        print(f"\n{len(created)} clients de demonstration crees dans data/coaching.db")
+        print(f"\n{len(created)} clients de demonstration crees dans la base de donnees")
 
     return created
 
