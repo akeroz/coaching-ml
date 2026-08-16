@@ -17,6 +17,10 @@ ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
 import db  # noqa: E402
+from coaching_logic import (  # noqa: E402
+    build_profile_from_client_row, compute_progress_status,
+    local_feature_importance, predict_for_client, progress_pct,
+)
 from etl import CAT_COLS, FEATURE_COLUMNS, NUM_COLS, TARGET_COL  # noqa: E402
 from predict import build_feature_row, load_artifacts  # noqa: E402
 from report import build_client_pdf  # noqa: E402
@@ -62,10 +66,47 @@ st.markdown(
     .app-header .icon { font-size: 1.9rem; line-height: 1; }
     .app-header h1 { font-size: 1.35rem; margin: 0; }
     .app-header p { margin: 0.1rem 0 0 0; opacity: 0.75; font-size: 0.88rem; }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
+    .kpi-card {
+        background: #171B24; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px;
+        padding: 1.1rem 1.3rem;
+    }
+    .kpi-card .kpi-icon { font-size: 1.3rem; margin-bottom: 0.35rem; }
+    .kpi-card .kpi-value { font-size: 1.9rem; font-weight: 700; line-height: 1.15; }
+    .kpi-card .kpi-label { font-size: 0.8rem; opacity: 0.62; margin-top: 0.25rem; }
+
+    .client-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
+    .client-card {
+        background: #171B24; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px;
+        padding: 1.05rem 1.15rem;
+    }
+    .client-card-head { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.75rem; }
+    .avatar {
+        width: 42px; height: 42px; min-width: 42px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 700; color: #fff; font-size: 0.92rem;
+    }
+    .client-name { font-weight: 600; font-size: 0.95rem; }
+    .client-meta { font-size: 0.78rem; opacity: 0.6; }
+    .client-status { font-size: 0.8rem; margin-top: 0.55rem; }
+    .progress-track { background: rgba(255,255,255,0.08); border-radius: 6px; height: 7px; margin-top: 0.6rem; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 6px; }
+
+    .activity-feed { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+    .activity-item {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 0.55rem 0.9rem; background: #171B24; border-radius: 8px;
+        font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.05);
+    }
+    .activity-item .activity-date { opacity: 0.5; font-size: 0.75rem; white-space: nowrap; margin-left: 1rem; }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+AVATAR_PALETTE = ["#10B981", "#3B82F6", "#8B5CF6", "#F59E0B", "#EF4444", "#EC4899", "#14B8A6", "#6366F1"]
+STATUS_COLOR = {"green": "#10B981", "red": "#EF4444", "gray": "#6B7280"}
 
 
 def render_header(title: str, subtitle: str = ""):
@@ -78,6 +119,58 @@ def render_header(title: str, subtitle: str = ""):
         """,
         unsafe_allow_html=True,
     )
+
+
+def avatar_color(seed: str) -> str:
+    return AVATAR_PALETTE[sum(ord(c) for c in seed) % len(AVATAR_PALETTE)]
+
+
+def render_kpi_cards(cards: list[dict]):
+    html = ['<div class="kpi-grid">']
+    for c in cards:
+        html.append(
+            f'<div class="kpi-card"><div class="kpi-icon">{c["icon"]}</div>'
+            f'<div class="kpi-value">{c["value"]}</div>'
+            f'<div class="kpi-label">{c["label"]}</div></div>'
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def render_client_cards(rows: list[dict]):
+    html = ['<div class="client-grid">']
+    for r in rows:
+        initials = (r["prenom"][:1] + r["nom"][:1]).upper()
+        color = avatar_color(r["prenom"] + r["nom"])
+        pct = max(0, min(100, r["progress_pct"]))
+        bar_color = STATUS_COLOR[r["couleur"]]
+        html.append(
+            f'<div class="client-card">'
+            f'<div class="client-card-head">'
+            f'<div class="avatar" style="background:{color}">{initials}</div>'
+            f'<div><div class="client-name">{r["prenom"]} {r["nom"]}</div>'
+            f'<div class="client-meta">{r["objectif"]} · {r["niveau"]}</div></div>'
+            f'</div>'
+            f'<div class="client-status">{r["icone"]} {r["libelle"]} — {r["poids_actuel"]:.1f} kg / {r["poids_cible"]:.1f} kg cible</div>'
+            f'<div class="progress-track"><div class="progress-fill" style="width:{pct}%;background:{bar_color}"></div></div>'
+            f'</div>'
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def render_activity_feed(items: list[dict]):
+    if not items:
+        st.caption("Aucune activite recente.")
+        return
+    html = ['<div class="activity-feed">']
+    for it in items:
+        html.append(
+            f'<div class="activity-item"><span>{it["text"]}</span>'
+            f'<span class="activity-date">{it["date"]}</span></div>'
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
 
 
 @st.cache_data
@@ -99,59 +192,6 @@ def load_results():
 @st.cache_resource
 def load_model_artifacts():
     return load_artifacts()
-
-
-def local_feature_importance(model, X_row: pd.DataFrame) -> pd.Series:
-    """Contribution de chaque feature a la prediction (approche generique multi-modeles)."""
-    if hasattr(model, "coef_"):
-        contrib = model.coef_[0] * X_row.iloc[0].to_numpy()
-        return pd.Series(contrib, index=X_row.columns).sort_values(key=abs, ascending=False)
-    if hasattr(model, "feature_importances_"):
-        return pd.Series(model.feature_importances_, index=X_row.columns).sort_values(ascending=False)
-    return pd.Series(np.zeros(len(X_row.columns)), index=X_row.columns)
-
-
-def build_profile_from_client_row(client: pd.Series) -> dict:
-    return {
-        "age": int(client["age"]), "sexe": client["sexe"], "taille_cm": client["taille_cm"],
-        "poids_initial_kg": client["poids_initial_kg"], "poids_cible_kg": client["poids_cible_kg"],
-        "objectif": client["objectif"], "niveau": client["niveau"],
-        "frequence_entrainement_semaine": int(client["frequence_entrainement_semaine"]),
-        "calories_quotidiennes": client["calories_quotidiennes"],
-        "proteines_g_par_jour": client["proteines_g_par_jour"],
-        "heures_sommeil": client["heures_sommeil"],
-        "semaines_suivi_prevues": int(client["semaines_suivi_prevues"]),
-        "adherence_programme_pct": client["adherence_programme_pct"],
-    }
-
-
-def predict_for_client(client: pd.Series, model, scaler, encoders) -> dict:
-    profile = build_profile_from_client_row(client)
-    X_row = build_feature_row(profile, encoders, scaler)
-    proba = float(model.predict_proba(X_row)[0, 1])
-    interpretation = (
-        "Profil favorable" if proba > 0.70
-        else "Profil a risque, ajuster le programme" if proba >= 0.40
-        else "Profil critique, revoir les bases"
-    )
-    return {"proba": proba, "interpretation": interpretation}
-
-
-def compute_progress_status(client: pd.Series, poids_actuel: float) -> dict:
-    """Statut de progression base sur le rapprochement (ou l'eloignement) du poids
-    cible, quel que soit l'objectif (seche/prise_masse/recomposition) - fonctionne
-    de facon uniforme sans logique specifique par type d'objectif."""
-    poids_initial = client["poids_initial_kg"]
-    poids_cible = client["poids_cible_kg"]
-    distance_initiale = abs(poids_initial - poids_cible)
-    distance_actuelle = abs(poids_actuel - poids_cible)
-    ecart = distance_initiale - distance_actuelle  # positif = rapprochement du but
-
-    if abs(ecart) < 0.15:
-        return {"icone": "⚪", "libelle": "Stable", "couleur": "gray"}
-    if ecart > 0:
-        return {"icone": "🟢", "libelle": "En progression", "couleur": "green"}
-    return {"icone": "🔴", "libelle": "En regression", "couleur": "red"}
 
 
 ESPACE_COACH = ["Accueil", "Mes clients", "Prediction en temps reel"]
@@ -196,23 +236,70 @@ if page == "Accueil":
         taux_reussite = clotures_df["objectif_atteint"].mean() if not clotures_df.empty else None
 
         model, scaler, encoders = load_model_artifacts()
-        risques = []
+
+        # Une seule lecture des pesees par client, reutilisee pour risques/portefeuille/activite/suivis
+        weigh_ins_by_client = {cid: db.get_weigh_ins(cid) for cid in actifs_df["client_id"]}
+
+        risques, portfolio_rows, activity_rows, stale = [], [], [], []
         for _, client in actifs_df.iterrows():
+            nom_complet = f"{client['prenom']} {client['nom']}"
             pred = predict_for_client(client, model, scaler, encoders)
             if pred["proba"] < 0.70:
-                risques.append({
-                    "client": f"{client['prenom']} {client['nom']}",
-                    "probabilite": pred["proba"],
-                    "statut": pred["interpretation"],
+                risques.append({"client": nom_complet, "probabilite": pred["proba"], "statut": pred["interpretation"]})
+
+            weigh_ins = weigh_ins_by_client[client["client_id"]]
+            if not weigh_ins.empty:
+                dates = pd.to_datetime(weigh_ins["date_saisie"])
+                first_date = dates.min()
+                last_date = dates.max()
+
+                for (_, w), wdate in zip(weigh_ins.iterrows(), dates):
+                    semaine = (wdate - first_date).days // 7
+                    portfolio_rows.append({
+                        "client": nom_complet, "semaine": semaine,
+                        "progression_pct": progress_pct(client, w["poids"]),
+                    })
+
+                last_row = weigh_ins.iloc[-1]
+                note_suffix = f" — {last_row['note']}" if last_row.get("note") else ""
+                activity_rows.append({
+                    "text": f"{nom_complet} — pesee a {last_row['poids']:.1f} kg{note_suffix}",
+                    "date": last_date.date().isoformat(), "sort_key": last_date,
                 })
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Clients actifs", len(actifs_df))
-        col2.metric(
-            "Taux de reussite (clients clotures)",
-            f"{taux_reussite:.0%}" if taux_reussite is not None else "N/A",
-        )
-        col3.metric("Clients a surveiller", len(risques))
+                days_since = (pd.Timestamp.today().normalize() - last_date).days
+                if days_since >= 10:
+                    stale.append({"client": nom_complet, "derniere_pesee": last_date.date().isoformat(), "jours_ecoules": days_since})
+
+        render_kpi_cards([
+            {"icon": "👥", "value": len(actifs_df), "label": "Clients actifs"},
+            {"icon": "🎯", "value": f"{taux_reussite:.0%}" if taux_reussite is not None else "N/A", "label": "Taux de reussite (clotures)"},
+            {"icon": "⚠️", "value": len(risques), "label": "Clients a surveiller"},
+            {"icon": "📋", "value": len(clotures_df), "label": "Suivis clotures"},
+        ])
+
+        col_left, col_right = st.columns([3, 2])
+
+        with col_left:
+            st.subheader("Progression du portefeuille")
+            if portfolio_rows:
+                portfolio_df = pd.DataFrame(portfolio_rows)
+                fig_portfolio = px.line(
+                    portfolio_df, x="semaine", y="progression_pct", color="client", markers=True,
+                    labels={"semaine": "Semaines depuis la 1ere pesee", "progression_pct": "Progression vers l'objectif (%)"},
+                )
+                fig_portfolio.add_hline(y=100, line_dash="dot", opacity=0.3, annotation_text="Objectif")
+                fig_portfolio.add_hline(y=0, line_dash="dot", opacity=0.15)
+                fig_portfolio.update_layout(height=360, margin=dict(l=10, r=10, t=20, b=10))
+                st.plotly_chart(fig_portfolio, use_container_width=True)
+                st.caption("100% = objectif atteint, 0% = poids de depart, valeurs negatives = eloignement de l'objectif.")
+            else:
+                st.caption("Aucune pesee enregistree pour le moment.")
+
+        with col_right:
+            st.subheader("Activite recente")
+            activity_rows.sort(key=lambda r: r["sort_key"], reverse=True)
+            render_activity_feed(activity_rows[:8])
 
         st.subheader("Clients a surveiller")
         if risques:
@@ -224,18 +311,6 @@ if page == "Accueil":
             st.success("Aucun client a risque actuellement.")
 
         st.subheader("Suivis a jour")
-        stale = []
-        for _, client in actifs_df.iterrows():
-            weigh_ins = db.get_weigh_ins(client["client_id"])
-            if not weigh_ins.empty:
-                last_date = pd.to_datetime(weigh_ins["date_saisie"]).max()
-                days_since = (pd.Timestamp.today().normalize() - last_date).days
-                if days_since >= 10:
-                    stale.append({
-                        "client": f"{client['prenom']} {client['nom']}",
-                        "derniere_pesee": last_date.date().isoformat(),
-                        "jours_ecoules": days_since,
-                    })
         if stale:
             st.warning(f"{len(stale)} client(s) sans pesee depuis plus de 10 jours :")
             st.dataframe(pd.DataFrame(stale), use_container_width=True, hide_index=True)
@@ -260,21 +335,28 @@ elif page == "Mes clients":
         if clients_df.empty:
             st.write("Aucun client enregistre pour le moment. Utilisez l'onglet \"Ajouter un client\".")
         else:
-            apercu_rows = []
+            card_rows = []
             for _, c in clients_df.iterrows():
                 w = db.get_weigh_ins(c["client_id"])
                 poids_actuel = w.iloc[-1]["poids"] if not w.empty else c["poids_initial_kg"]
                 statut = compute_progress_status(c, poids_actuel)
-                apercu_rows.append({
-                    "client_id": c["client_id"], "prenom": c["prenom"], "nom": c["nom"],
-                    "objectif": c["objectif"], "niveau": c["niveau"],
-                    "poids_initial_kg": c["poids_initial_kg"], "poids_cible_kg": c["poids_cible_kg"],
-                    "tendance": f"{statut['icone']} {statut['libelle']}",
-                    "date_creation": c["date_creation"], "objectif_atteint": c["objectif_atteint"],
-                    "actif": c["actif"],
+                card_rows.append({
+                    "prenom": c["prenom"], "nom": c["nom"], "objectif": c["objectif"], "niveau": c["niveau"],
+                    "poids_actuel": poids_actuel, "poids_cible": c["poids_cible_kg"],
+                    "progress_pct": progress_pct(c, poids_actuel),
+                    **statut,
                 })
-            st.dataframe(pd.DataFrame(apercu_rows), use_container_width=True, hide_index=True)
-            st.caption("🟢 se rapproche du poids cible - 🔴 s'en eloigne - ⚪ stable (variation < 150g).")
+            render_client_cards(card_rows)
+            st.caption("🟢 se rapproche du poids cible · 🔴 s'en eloigne · ⚪ stable (variation < 150g). La barre indique la progression vers l'objectif.")
+
+            with st.expander("Voir le tableau complet (dates, statut de cloture...)"):
+                st.dataframe(
+                    clients_df[[
+                        "client_id", "prenom", "nom", "objectif", "niveau", "poids_initial_kg",
+                        "poids_cible_kg", "date_creation", "objectif_atteint", "actif",
+                    ]],
+                    use_container_width=True, hide_index=True,
+                )
 
             st.subheader("Fiche client")
             selected_id = st.selectbox(

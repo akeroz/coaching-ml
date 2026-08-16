@@ -1,0 +1,74 @@
+"""Logique metier pure (sans dependance a Streamlit), extraite de app.py pour
+etre testable independamment du runtime de l'application."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from predict import build_feature_row
+
+
+def local_feature_importance(model, X_row: pd.DataFrame) -> pd.Series:
+    """Contribution de chaque feature a la prediction (approche generique multi-modeles)."""
+    if hasattr(model, "coef_"):
+        contrib = model.coef_[0] * X_row.iloc[0].to_numpy()
+        return pd.Series(contrib, index=X_row.columns).sort_values(key=abs, ascending=False)
+    if hasattr(model, "feature_importances_"):
+        return pd.Series(model.feature_importances_, index=X_row.columns).sort_values(ascending=False)
+    return pd.Series(np.zeros(len(X_row.columns)), index=X_row.columns)
+
+
+def build_profile_from_client_row(client: pd.Series) -> dict:
+    return {
+        "age": int(client["age"]), "sexe": client["sexe"], "taille_cm": client["taille_cm"],
+        "poids_initial_kg": client["poids_initial_kg"], "poids_cible_kg": client["poids_cible_kg"],
+        "objectif": client["objectif"], "niveau": client["niveau"],
+        "frequence_entrainement_semaine": int(client["frequence_entrainement_semaine"]),
+        "calories_quotidiennes": client["calories_quotidiennes"],
+        "proteines_g_par_jour": client["proteines_g_par_jour"],
+        "heures_sommeil": client["heures_sommeil"],
+        "semaines_suivi_prevues": int(client["semaines_suivi_prevues"]),
+        "adherence_programme_pct": client["adherence_programme_pct"],
+    }
+
+
+def predict_for_client(client: pd.Series, model, scaler, encoders) -> dict:
+    profile = build_profile_from_client_row(client)
+    X_row = build_feature_row(profile, encoders, scaler)
+    proba = float(model.predict_proba(X_row)[0, 1])
+    interpretation = (
+        "Profil favorable" if proba > 0.70
+        else "Profil a risque, ajuster le programme" if proba >= 0.40
+        else "Profil critique, revoir les bases"
+    )
+    return {"proba": proba, "interpretation": interpretation}
+
+
+def compute_progress_status(client: pd.Series, poids_actuel: float) -> dict:
+    """Statut de progression base sur le rapprochement (ou l'eloignement) du poids
+    cible, quel que soit l'objectif (seche/prise_masse/recomposition) - fonctionne
+    de facon uniforme sans logique specifique par type d'objectif."""
+    poids_initial = client["poids_initial_kg"]
+    poids_cible = client["poids_cible_kg"]
+    distance_initiale = abs(poids_initial - poids_cible)
+    distance_actuelle = abs(poids_actuel - poids_cible)
+    ecart = distance_initiale - distance_actuelle  # positif = rapprochement du but
+
+    if abs(ecart) < 0.15:
+        return {"icone": "⚪", "libelle": "Stable", "couleur": "gray"}
+    if ecart > 0:
+        return {"icone": "🟢", "libelle": "En progression", "couleur": "green"}
+    return {"icone": "🔴", "libelle": "En regression", "couleur": "red"}
+
+
+def progress_pct(client: pd.Series, poids_actuel: float) -> float:
+    """Pourcentage de progression vers l'objectif (0 = poids de depart, 100 = objectif
+    atteint), independant de la direction (perte ou prise de poids). Peut depasser 100
+    ou etre negatif si le client s'est eloigne au-dela de son point de depart."""
+    poids_initial = client["poids_initial_kg"]
+    poids_cible = client["poids_cible_kg"]
+    denom = (poids_cible - poids_initial)
+    if abs(denom) < 1e-6:
+        return 100.0
+    return float((poids_actuel - poids_initial) / denom * 100)
