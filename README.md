@@ -1,6 +1,6 @@
 # Coaching ML - Prediction de progression fitness
 
-Outil de machine learning pour le coaching fitness en ligne **@builtbyarthur**,
+Outil de machine learning pour le coaching en ligne,
 permettant d'estimer la probabilite qu'un client atteigne son objectif
 (seche, prise de masse, recomposition) a partir de son profil et de ses
 habitudes, afin d'adapter l'accompagnement propose a distance.
