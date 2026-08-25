@@ -1,0 +1,24 @@
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    - cron: "0 8 */3 * *"  # tous les 3 jours a 08:00 UTC (marge large sous le seuil de 7 jours)
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Installer les dependances minimales
+        run: pip install sqlalchemy psycopg2-binary python-dotenv pandas
+
+      - name: Ping Supabase (garder le projet actif)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/keepalive.py
