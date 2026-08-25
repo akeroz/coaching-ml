@@ -91,6 +91,47 @@ def test_delete_client_removes_record_and_weigh_ins():
     assert db.get_weigh_ins(client_id).empty
 
 
+def test_add_client_without_consent_is_not_recorded_as_consenting():
+    client_id = db.add_client(dict(TEST_PROFILE))
+    try:
+        client = db.get_client(client_id)
+        assert client["consentement_recueilli"] == 0
+        assert pd_isna(client["date_consentement"])
+    finally:
+        db.delete_client(client_id)
+
+
+def test_add_client_with_consent_is_timestamped():
+    client_id = db.add_client(dict(TEST_PROFILE), consentement_recueilli=True)
+    try:
+        client = db.get_client(client_id)
+        assert client["consentement_recueilli"] == 1
+        assert not pd_isna(client["date_consentement"])
+    finally:
+        db.delete_client(client_id)
+
+
+def test_add_weigh_in_stores_energie_and_tour_taille(test_client_id):
+    db.add_weigh_in(test_client_id, 78.0, energie=4, tour_taille_cm=85.5)
+    weigh_ins = db.get_weigh_ins(test_client_id)
+    last_row = weigh_ins.iloc[-1]
+    assert last_row["energie"] == 4
+    assert last_row["tour_taille_cm"] == 85.5
+
+
+def test_add_weigh_in_optional_fields_default_to_null(test_client_id):
+    db.add_weigh_in(test_client_id, 77.0)
+    last_row = db.get_weigh_ins(test_client_id).iloc[-1]
+    assert pd_isna(last_row["energie"])
+    assert pd_isna(last_row["tour_taille_cm"])
+
+
+def test_export_all_data_includes_test_client(test_client_id):
+    export = db.export_all_data()
+    assert test_client_id in export["clients"]["client_id"].values
+    assert test_client_id in export["suivis_hebdo"]["client_id"].values
+
+
 def pd_isna(value) -> bool:
     import pandas as pd
     return pd.isna(value)

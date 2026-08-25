@@ -10,6 +10,14 @@ le coach. Base legale mobilisable : **execution du contrat de coaching**
 (art. 6.1.b RGPD) conclu avec chaque client, complete par l'**interet
 legitime** du coach a ameliorer la qualite de son accompagnement (art. 6.1.f).
 
+En complement de cette base legale contractuelle, le consentement explicite
+du client est recueilli et horodate a la creation de sa fiche (case a cocher
+obligatoire dans le formulaire "Ajouter un client", champs
+`consentement_recueilli` et `date_consentement` en base) : le coach ne peut
+pas enregistrer un client sans confirmer explicitement que celui-ci a ete
+informe de la collecte de ses donnees. Cette preuve horodatee constitue une
+tracabilite concrete, pas seulement un principe documente.
+
 ### 1.2 Separation stricte des donnees reelles et du dataset d'entrainement
 
 Le projet distingue deux mondes de donnees totalement separes :

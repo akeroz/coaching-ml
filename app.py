@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 import joblib
@@ -328,7 +329,9 @@ elif page == "Mes clients":
             "illustrer le fonctionnement de l'application, pas de vrais clients."
         )
 
-    tab_liste, tab_ajout, tab_suivi = st.tabs(["Mes clients", "Ajouter un client", "Suivi hebdomadaire"])
+    tab_liste, tab_ajout, tab_suivi, tab_export = st.tabs(
+        ["Mes clients", "Ajouter un client", "Suivi hebdomadaire", "Sauvegarde"]
+    )
 
     with tab_liste:
         clients_df = db.get_all_clients()
@@ -473,11 +476,19 @@ elif page == "Mes clients":
                 semaines_suivi_prevues = st.slider("Semaines de suivi prevues", 1, 52, 12)
                 adherence_programme_pct = st.slider("Adherence estimee (%)", 0, 100, 75)
 
+            consentement = st.checkbox(
+                "Le client a ete informe de la collecte de ses donnees et y consent",
+                help="A cocher lorsque le client a ete informe (finalite, duree de conservation, "
+                     "droits RGPD) - voir docs/RGPD_AI_ACT.md. Horodate automatiquement.",
+            )
+
             submitted_ajout = st.form_submit_button("Ajouter ce client")
 
         if submitted_ajout:
             if not prenom or not nom:
                 st.error("Prenom et nom sont obligatoires.")
+            elif not consentement:
+                st.error("Le consentement du client doit etre recueilli avant d'enregistrer sa fiche.")
             else:
                 new_id = db.add_client({
                     "prenom": prenom, "nom": nom, "age": age, "sexe": sexe, "taille_cm": taille_cm,
@@ -488,7 +499,7 @@ elif page == "Mes clients":
                     "proteines_g_par_jour": proteines_g_par_jour, "heures_sommeil": heures_sommeil,
                     "semaines_suivi_prevues": semaines_suivi_prevues,
                     "adherence_programme_pct": adherence_programme_pct,
-                })
+                }, consentement_recueilli=True)
                 st.success(f"Client ajoute : {new_id}. Retrouvez-le dans l'onglet \"Mes clients\".")
 
     with tab_suivi:
@@ -502,14 +513,51 @@ elif page == "Mes clients":
                 format_func=lambda cid: f"{cid} - " + actifs_df.set_index('client_id').loc[cid, 'prenom'] + " " + actifs_df.set_index('client_id').loc[cid, 'nom'],
                 key="select_suivi",
             )
-            poids_semaine = st.number_input("Poids releve cette semaine (kg)", 30.0, 250.0, 75.0)
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                poids_semaine = st.number_input("Poids releve cette semaine (kg)", 30.0, 250.0, 75.0)
+            with col_b:
+                tour_taille_semaine = st.number_input(
+                    "Tour de taille (cm, optionnel)", 0.0, 200.0, 0.0,
+                    help="Laisser a 0 si non mesure cette semaine.",
+                )
+            with col_c:
+                energie_semaine = st.select_slider(
+                    "Ressenti / energie", options=[1, 2, 3, 4, 5], value=3,
+                    help="1 = epuise, 5 = en pleine forme",
+                )
             note_semaine = st.text_input("Note (optionnel)", "")
             if st.button("Enregistrer la pesee"):
-                db.add_weigh_in(selected_id_suivi, poids_semaine, note_semaine)
+                db.add_weigh_in(
+                    selected_id_suivi, poids_semaine, note_semaine,
+                    energie=energie_semaine,
+                    tour_taille_cm=tour_taille_semaine if tour_taille_semaine > 0 else None,
+                )
                 st.success("Pesee enregistree.")
 
             st.subheader("Historique")
             st.dataframe(db.get_weigh_ins(selected_id_suivi), use_container_width=True)
+
+    with tab_export:
+        st.write(
+            "Vos vraies donnees vivent uniquement dans la base hebergee (Supabase). "
+            "Exportez-les regulierement comme filet de securite independant de l'hebergeur."
+        )
+        export_data = db.export_all_data()
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            st.download_button(
+                "Telecharger mes clients (CSV)",
+                data=export_data["clients"].to_csv(index=False).encode("utf-8"),
+                file_name=f"clients_{date.today().isoformat()}.csv", mime="text/csv",
+            )
+        with col_exp2:
+            st.download_button(
+                "Telecharger l'historique des suivis (CSV)",
+                data=export_data["suivis_hebdo"].to_csv(index=False).encode("utf-8"),
+                file_name=f"suivis_hebdo_{date.today().isoformat()}.csv", mime="text/csv",
+            )
+        st.caption(f"{len(export_data['clients'])} client(s), {len(export_data['suivis_hebdo'])} pesee(s) au total.")
 
 # ----------------------------------------------------------------------------
 # PREDICTION EN TEMPS REEL

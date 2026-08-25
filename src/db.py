@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS suivis_hebdo (
 );
 """
 
+# Migrations additives (idempotentes) pour les colonnes ajoutees apres la creation
+# initiale des tables - evite d'avoir a recreer la base a chaque evolution du schema.
+MIGRATIONS = """
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_recueilli INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS date_consentement TEXT;
+ALTER TABLE suivis_hebdo ADD COLUMN IF NOT EXISTS energie INTEGER;
+ALTER TABLE suivis_hebdo ADD COLUMN IF NOT EXISTS tour_taille_cm REAL;
+"""
+
 _engine: Engine | None = None
 
 
@@ -88,6 +97,10 @@ def init_db():
             statement = statement.strip()
             if statement:
                 conn.execute(text(statement))
+        for statement in MIGRATIONS.strip().split(";\n"):
+            statement = statement.strip().rstrip(";")
+            if statement:
+                conn.execute(text(statement))
 
 
 def _next_client_id(conn) -> str:
@@ -95,8 +108,12 @@ def _next_client_id(conn) -> str:
     return f"REAL_{count + 1:03d}"
 
 
-def add_client(profile: dict) -> str:
-    """Insere un nouveau client reel. Retourne le client_id genere."""
+def add_client(profile: dict, consentement_recueilli: bool = False) -> str:
+    """Insere un nouveau client reel. Retourne le client_id genere.
+
+    consentement_recueilli : a cocher explicitement par le coach lorsque le client
+    a ete informe de la collecte de ses donnees (voir docs/RGPD_AI_ACT.md, art. 15-20
+    RGPD - preuve horodatee du recueil du consentement)."""
     init_db()
     with get_connection() as conn:
         client_id = _next_client_id(conn)
@@ -106,15 +123,19 @@ def add_client(profile: dict) -> str:
                 poids_cible_kg, objectif, niveau, frequence_entrainement_semaine,
                 calories_quotidiennes, proteines_g_par_jour, heures_sommeil,
                 semaines_suivi_prevues, adherence_programme_pct, date_creation,
-                objectif_atteint, actif
+                objectif_atteint, actif, consentement_recueilli, date_consentement
             ) VALUES (
                 :client_id, :prenom, :nom, :age, :sexe, :taille_cm, :poids_initial_kg,
                 :poids_cible_kg, :objectif, :niveau, :frequence_entrainement_semaine,
                 :calories_quotidiennes, :proteines_g_par_jour, :heures_sommeil,
                 :semaines_suivi_prevues, :adherence_programme_pct, :date_creation,
-                NULL, 1
+                NULL, 1, :consentement_recueilli, :date_consentement
             )"""),
-            {**profile, "client_id": client_id, "date_creation": date.today().isoformat()},
+            {
+                **profile, "client_id": client_id, "date_creation": date.today().isoformat(),
+                "consentement_recueilli": int(consentement_recueilli),
+                "date_consentement": date.today().isoformat() if consentement_recueilli else None,
+            },
         )
         conn.execute(
             text("INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) "
@@ -165,14 +186,19 @@ def delete_client(client_id: str):
         conn.execute(text("DELETE FROM clients WHERE client_id = :client_id"), {"client_id": client_id})
 
 
-def add_weigh_in(client_id: str, poids: float, note: str = "", date_saisie: str | None = None):
+def add_weigh_in(
+    client_id: str, poids: float, note: str = "", date_saisie: str | None = None,
+    energie: int | None = None, tour_taille_cm: float | None = None,
+):
+    """energie : ressenti du client sur une echelle de 1 (epuise) a 5 (en pleine forme),
+    optionnel. tour_taille_cm : mensuration optionnelle, complementaire au poids seul."""
     init_db()
     with get_connection() as conn:
         conn.execute(
-            text("INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note) "
-                 "VALUES (:client_id, :date_saisie, :poids, :note)"),
+            text("INSERT INTO suivis_hebdo (client_id, date_saisie, poids, note, energie, tour_taille_cm) "
+                 "VALUES (:client_id, :date_saisie, :poids, :note, :energie, :tour_taille_cm)"),
             {"client_id": client_id, "date_saisie": date_saisie or date.today().isoformat(),
-             "poids": poids, "note": note},
+             "poids": poids, "note": note, "energie": energie, "tour_taille_cm": tour_taille_cm},
         )
 
 
@@ -202,3 +228,15 @@ def get_labelled_clients() -> pd.DataFrame:
     pour le reentrainement du modele."""
     df = get_all_clients()
     return df[df["objectif_atteint"].notna()]
+
+
+def get_all_weigh_ins() -> pd.DataFrame:
+    init_db()
+    with get_connection() as conn:
+        return pd.read_sql_query(text("SELECT * FROM suivis_hebdo ORDER BY client_id, date_saisie"), conn)
+
+
+def export_all_data() -> dict[str, pd.DataFrame]:
+    """Sauvegarde complete des vraies donnees (clients + historique des suivis),
+    a la demande du coach - filet de securite independant de l'hebergeur."""
+    return {"clients": get_all_clients(), "suivis_hebdo": get_all_weigh_ins()}
