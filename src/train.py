@@ -30,7 +30,7 @@ from sklearn.metrics import (
 )
 from xgboost import XGBClassifier
 
-from etl import FEATURE_COLUMNS, PROCESSED_PATH, TARGET_COL
+from etl import FEATURE_COLUMNS, RAW_PATH, TARGET_COL, feature_engineering, fit_transform_features, transform_features
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT_DIR / "models"
@@ -41,10 +41,30 @@ CV_FOLDS = 5
 
 
 def load_data():
-    df = pd.read_csv(PROCESSED_PATH)
-    X = df[FEATURE_COLUMNS]
-    y = df[TARGET_COL]
-    return train_test_split(X, y, test_size=0.2, stratify=y, random_state=RANDOM_STATE)
+    """Charge les donnees et les prepare SANS fuite : le split train/test est fait
+    sur les donnees brutes (feature engineering pur, sans normalisation), puis le
+    StandardScaler/LabelEncoder est ajuste uniquement sur le train set. Le test set
+    n'influence jamais la normalisation - contrairement a une version precedente qui
+    relisait dataset_final.csv (deja normalise sur 100% des donnees avant le split).
+
+    Le scaler/encoders "production" utilises par predict.py (data/processed/scaler.pkl,
+    label_encoders.pkl, generes par etl.py sur l'integralite du dataset) restent
+    volontairement distincts : une fois la methodologie validee par ce split honnete,
+    le modele final deploye beneficie d'etre entraine sur toutes les donnees
+    disponibles - pratique standard, pas une fuite, puisqu'aucune metrique n'est
+    rapportee a partir de ce refit final."""
+    raw_df = pd.read_csv(RAW_PATH)
+    engineered_df = feature_engineering(raw_df)
+
+    train_raw, test_raw = train_test_split(
+        engineered_df, test_size=0.2, stratify=engineered_df[TARGET_COL], random_state=RANDOM_STATE
+    )
+    train_processed, encoders, scaler = fit_transform_features(train_raw)
+    test_processed = transform_features(test_raw, encoders, scaler)
+
+    X_train, y_train = train_processed[FEATURE_COLUMNS], train_processed[TARGET_COL]
+    X_test, y_test = test_processed[FEATURE_COLUMNS], test_processed[TARGET_COL]
+    return X_train, X_test, y_train, y_test
 
 
 MODEL_SPECS = {

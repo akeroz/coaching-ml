@@ -7,15 +7,30 @@ Score composite = 0.4 * AUC-ROC + 0.3 * F1 (weighted) + 0.2 * Accuracy
 Le meilleur modele est sauvegarde dans models/best_model.pkl, les resultats
 complets dans models/results.json, et un rapport de selection est genere
 dans docs/MODEL_SELECTION_REPORT.md.
+
+Note methodologique (absence de fuite de donnees) : les metriques comparees
+ici viennent de train.py, qui ajuste le StandardScaler/LabelEncoder
+uniquement sur le split d'entrainement (80%) - le jeu de test n'a jamais
+influence la normalisation. Une fois le modele gagnant designe sur cette
+base honnete, il est reentraine ici avec les memes hyperparametres sur
+l'integralite du dataset (normalise par le scaler "production" de etl.py,
+lui-meme ajuste sur 100% des donnees) : c'est la pratique standard consistant
+a maximiser les donnees disponibles pour le modele final deploye, une fois
+sa performance validee - pas une fuite, puisqu'aucune metrique n'est
+rapportee a partir de ce refit.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
+import joblib
 import pandas as pd
+from sklearn.base import clone
+
+from etl import FEATURE_COLUMNS, PROCESSED_PATH, TARGET_COL
+from train import MODEL_SPECS
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT_DIR / "models"
@@ -79,7 +94,8 @@ def generate_report(ranking: pd.DataFrame, winner_key: str, results: dict) -> st
         "",
         "4 modeles ont ete entraines sur le meme split train/test stratifie (80/20) "
         "et optimises par GridSearchCV : Regression logistique, Foret aleatoire, "
-        "XGBoost, Reseau de neurones (MLP).",
+        "XGBoost, Reseau de neurones (MLP). Le scaler/encoders sont ajustes "
+        "uniquement sur le train set (aucune fuite du test set dans la normalisation).",
         "",
         "Un score composite a ete calcule pour chaque modele :",
         "",
@@ -128,7 +144,12 @@ def generate_report(ranking: pd.DataFrame, winner_key: str, results: dict) -> st
         "Ce mecanisme de selection automatique, base sur un score composite reproductible, "
         "garantit que le modele mis en production est objectivement le plus performant sur "
         "l'ensemble des criteres retenus (discrimination, equilibre precision/rappel, exactitude "
-        "globale et cout de calcul), plutot qu'un choix arbitraire.",
+        "globale et cout de calcul), plutot qu'un choix arbitraire.\n\n"
+        "Le modele final sauvegarde dans `best_model.pkl` est reentraine avec les memes "
+        "hyperparametres sur l'integralite des 600 clients (contre 80% pour l'evaluation "
+        "ci-dessus), afin de maximiser les donnees disponibles pour la prediction en "
+        "conditions reelles - les metriques rapportees restent celles du split honnete, "
+        "jamais celles de ce modele final.",
     ]
 
     return "\n".join(lines)
@@ -149,7 +170,18 @@ def run_selection():
     )
     print(f"\nModele selectionne : {ranking.iloc[0]['label']} (score={ranking.iloc[0]['composite_score']:.4f})")
 
-    shutil.copyfile(MODELS_DIR / f"{winner_key}.pkl", BEST_MODEL_PATH)
+    # Le modele evalue ci-dessus n'a vu que 80% des donnees (split honnete, sans
+    # fuite - voir train.py). Une fois la methodologie validee, le modele DEPLOYE
+    # est reentraine avec les memes hyperparametres sur l'integralite du dataset
+    # (dataset_final.csv, normalise par le scaler "production" de etl.py) : pratique
+    # standard qui maximise les donnees disponibles pour le modele final, sans
+    # jamais faire fuiter le test set dans une metrique rapportee.
+    full_df = pd.read_csv(PROCESSED_PATH)
+    X_full, y_full = full_df[FEATURE_COLUMNS], full_df[TARGET_COL]
+    best_params = results[winner_key]["best_params"]
+    final_model = clone(MODEL_SPECS[winner_key]["estimator"]).set_params(**best_params)
+    final_model.fit(X_full, y_full)
+    joblib.dump(final_model, BEST_MODEL_PATH)
 
     output = {
         "ranking": ranking.to_dict(orient="records"),

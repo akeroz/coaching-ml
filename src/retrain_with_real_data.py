@@ -3,6 +3,17 @@
 production (best_model.pkl, scaler, encoders, dataset_final.csv) ne sont ecrases
 que si le nouveau score composite est au moins aussi bon que l'ancien.
 
+Note methodologique (absence de fuite de donnees) : le scaler/encoders utilises
+pour evaluer les 4 modeles sont ajustes uniquement sur un split d'entrainement
+(80%), jamais sur l'integralite des donnees combinees - voir train.py. Le modele
+promu est ensuite reentraine avec les memes hyperparametres sur 100% des donnees
+combinees (synthetiques + reelles), pratique standard une fois la methodologie
+validee, pas une fuite.
+
+Chaque tentative (promue, rejetee ou ignoree faute de volume) est journalisee
+dans models/retrain_history.json, pour permettre de detecter une derive du
+modele dans le temps (Bloc 3 - maintenabilite).
+
 Usage : depuis l'app ("Mes clients" > Reentrainement) ou en ligne de commande
 (python src/retrain_with_real_data.py)."""
 
@@ -10,26 +21,29 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import date
 from pathlib import Path
 
 import joblib
 import pandas as pd
+from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 
 import db
 from etl import (
     ENCODERS_PATH, FEATURE_COLUMNS,
     PROCESSED_PATH, RAW_PATH, SCALER_PATH, TARGET_COL,
-    feature_engineering, fit_transform_features,
+    feature_engineering, fit_transform_features, transform_features,
 )
 from select_model import RESULTS_PATH as PROD_RESULTS_PATH
 from select_model import WEIGHTS, compute_composite_scores, generate_report
-from train import MODELS_DIR, RANDOM_STATE, run_training
+from train import MODEL_SPECS, MODELS_DIR, RANDOM_STATE, run_training
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CANDIDATE_DIR = MODELS_DIR / "candidate"
 CANDIDATE_RESULTS_PATH = MODELS_DIR / "retrain_candidate_results.json"
 BEST_MODEL_PATH = MODELS_DIR / "best_model.pkl"
+RETRAIN_HISTORY_PATH = MODELS_DIR / "retrain_history.json"
 DOCS_DIR = ROOT_DIR / "docs"
 SELECTION_REPORT_PATH = DOCS_DIR / "MODEL_SELECTION_REPORT.md"
 
@@ -68,26 +82,57 @@ def _get_previous_winner_score() -> float:
     return -1.0
 
 
+def get_retrain_history() -> list[dict]:
+    if not RETRAIN_HISTORY_PATH.exists():
+        return []
+    with open(RETRAIN_HISTORY_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _log_retrain_attempt(summary: dict):
+    """Ajoute une entree a l'historique des tentatives de reentrainement, quel que
+    soit le resultat (promu/rejete/ignore) - permet de suivre l'evolution du score
+    du modele dans le temps et de reperer une eventuelle derive."""
+    history = get_retrain_history()
+    history.append({
+        "date": date.today().isoformat(),
+        "status": summary.get("status"),
+        "n_real_clients": summary.get("n_real_clients"),
+        "old_score": summary.get("old_score"),
+        "new_score": summary.get("new_score"),
+        "winner_label": summary.get("new_winner_label"),
+    })
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(RETRAIN_HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
+
+
 def run_retrain(min_real_clients: int = MIN_REAL_CLIENTS) -> dict:
     combined_raw_df, n_real = build_combined_raw_df()
 
     if n_real < min_real_clients:
-        return {
+        result = {
             "status": "skipped",
             "reason": f"Seulement {n_real} client(s) reel(s) labellise(s) "
                       f"(objectif_atteint connu) - minimum requis : {min_real_clients}. "
                       "Reentrainement trop instable sur un si petit volume, annule.",
             "n_real_clients": n_real,
         }
+        _log_retrain_attempt(result)
+        return result
 
     engineered_df = feature_engineering(combined_raw_df)
-    processed_df, encoders, scaler = fit_transform_features(engineered_df)
 
-    X = processed_df[FEATURE_COLUMNS]
-    y = processed_df[TARGET_COL]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=RANDOM_STATE
+    # Split avant normalisation : le test set n'influence jamais le scaler/encoders
+    # utilises pour evaluer les modeles (voir note methodologique en tete de fichier).
+    train_raw, test_raw = train_test_split(
+        engineered_df, test_size=0.2, stratify=engineered_df[TARGET_COL], random_state=RANDOM_STATE
     )
+    train_processed, eval_encoders, eval_scaler = fit_transform_features(train_raw)
+    test_processed = transform_features(test_raw, eval_encoders, eval_scaler)
+
+    X_train, y_train = train_processed[FEATURE_COLUMNS], train_processed[TARGET_COL]
+    X_test, y_test = test_processed[FEATURE_COLUMNS], test_processed[TARGET_COL]
 
     CANDIDATE_DIR.mkdir(parents=True, exist_ok=True)
     candidate_train_results = run_training(
@@ -113,13 +158,25 @@ def run_retrain(min_real_clients: int = MIN_REAL_CLIENTS) -> dict:
     }
 
     if promoted:
-        shutil.copyfile(CANDIDATE_DIR / f"{new_winner_key}.pkl", BEST_MODEL_PATH)
+        # Reentrainement final avec les memes hyperparametres sur l'integralite des
+        # donnees combinees (synthetiques + reelles), une fois la methodologie
+        # validee sur le split ci-dessus - maximise les donnees pour le modele
+        # deploye, sans jamais fuiter le test set dans une metrique rapportee.
+        full_processed_df, full_encoders, full_scaler = fit_transform_features(engineered_df)
+        X_full = full_processed_df[FEATURE_COLUMNS]
+        y_full = full_processed_df[TARGET_COL]
+
+        best_params = candidate_train_results[new_winner_key]["best_params"]
+        final_model = clone(MODEL_SPECS[new_winner_key]["estimator"]).set_params(**best_params)
+        final_model.fit(X_full, y_full)
+        joblib.dump(final_model, BEST_MODEL_PATH)
+
         for key in candidate_train_results:
             shutil.copyfile(CANDIDATE_DIR / f"{key}.pkl", MODELS_DIR / f"{key}.pkl")
 
-        processed_df.to_csv(PROCESSED_PATH, index=False)
-        joblib.dump(scaler, SCALER_PATH)
-        joblib.dump(encoders, ENCODERS_PATH)
+        full_processed_df.to_csv(PROCESSED_PATH, index=False)
+        joblib.dump(full_scaler, SCALER_PATH)
+        joblib.dump(full_encoders, ENCODERS_PATH)
 
         output = {
             "ranking": ranking.to_dict(orient="records"),
@@ -142,6 +199,7 @@ def run_retrain(min_real_clients: int = MIN_REAL_CLIENTS) -> dict:
         with open(CANDIDATE_RESULTS_PATH, "w", encoding="utf-8") as f:
             json.dump({"ranking": ranking.to_dict(orient="records")}, f, indent=2, ensure_ascii=False)
 
+    _log_retrain_attempt(summary)
     return summary
 
 

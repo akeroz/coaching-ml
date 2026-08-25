@@ -25,7 +25,7 @@ from coaching_logic import (  # noqa: E402
 from etl import CAT_COLS, FEATURE_COLUMNS, NUM_COLS, TARGET_COL  # noqa: E402
 from predict import build_feature_row, load_artifacts  # noqa: E402
 from report import build_client_pdf  # noqa: E402
-from retrain_with_real_data import MIN_REAL_CLIENTS, run_retrain  # noqa: E402
+from retrain_with_real_data import MIN_REAL_CLIENTS, get_retrain_history, run_retrain  # noqa: E402
 from seed_demo_clients import seed_demo_clients  # noqa: E402
 
 st.set_page_config(page_title="Coaching ML - builtbyarthur", page_icon="💪", layout="wide")
@@ -49,6 +49,17 @@ if "DATABASE_URL" not in os.environ:
     st.error(
         "DATABASE_URL n'est pas configuree. En local, creez un fichier .env "
         "(voir .env.example). Sur Streamlit Cloud, ajoutez DATABASE_URL dans les Secrets."
+    )
+    st.stop()
+
+try:
+    db.init_db()
+except Exception as exc:
+    st.error(
+        "⚠️ Impossible de se connecter a la base de donnees pour le moment. "
+        "Verifiez votre connexion internet, ou reessayez dans quelques instants "
+        "(la base peut etre en cours de reveil apres une periode d'inactivite).\n\n"
+        f"Detail technique : {type(exc).__name__}"
     )
     st.stop()
 
@@ -1090,6 +1101,34 @@ elif page == "Reentrainement (avance)":
     if SELECTION_REPORT.exists():
         with st.expander("Voir le dernier rapport de selection"):
             st.markdown(SELECTION_REPORT.read_text(encoding="utf-8"))
+
+    st.subheader("Suivi de la performance dans le temps")
+    st.caption(
+        "Historique de chaque tentative de reentrainement (promue, rejetee ou ignoree) - "
+        "permet de reperer une derive du modele (score qui se degrade progressivement) "
+        "meme si chaque tentative individuelle est acceptee."
+    )
+    history = get_retrain_history()
+    if not history:
+        st.info("Aucun reentrainement tente pour le moment.")
+    else:
+        history_df = pd.DataFrame(history)
+        display_df = history_df.copy()
+        display_df["new_score"] = display_df["new_score"].apply(lambda v: f"{v:.4f}" if pd.notna(v) else "—")
+        display_df["old_score"] = display_df["old_score"].apply(lambda v: f"{v:.4f}" if pd.notna(v) else "—")
+        st.dataframe(
+            display_df[["date", "status", "n_real_clients", "old_score", "new_score", "winner_label"]],
+            use_container_width=True, hide_index=True,
+        )
+
+        scored_history = history_df[history_df["new_score"].notna()]
+        if len(scored_history) >= 2:
+            fig_history = px.line(
+                scored_history, x="date", y="new_score", markers=True,
+                labels={"date": "Date", "new_score": "Score composite"},
+                title="Evolution du score composite au fil des reentrainements",
+            )
+            render_chart(fig_history)
 
 # ----------------------------------------------------------------------------
 # GESTION DE PROJET
