@@ -128,6 +128,36 @@ st.markdown(
         font-family: 'JetBrains Mono', monospace; opacity: 0.5; font-size: 0.72rem;
         white-space: nowrap; margin-left: 1rem;
     }
+
+    /* Titres Streamlit natifs (st.header/subheader/title) en Playfair Display,
+       pour que l'identite ne soit pas confinee aux seules cartes personnalisees. */
+    h1, h2, h3 { font-family: 'Playfair Display', serif !important; font-weight: 700 !important; color: #1A1A1A; }
+
+    /* Boutons radio (Espace / Navigation) transformes en pilules cliquables au lieu
+       des ronds natifs Streamlit - plus proche d'une vraie barre de navigation. */
+    div[data-testid="stRadio"] > label[data-testid="stWidgetLabel"] p {
+        font-family: 'JetBrains Mono', monospace !important; font-size: 0.68rem !important;
+        letter-spacing: 0.08em; text-transform: uppercase; color: #6E11F4; opacity: 0.75;
+    }
+    div[data-testid="stRadio"] div[role="radiogroup"] { gap: 0.2rem; }
+    div[data-testid="stRadio"] label[data-baseweb="radio"] {
+        background: transparent; border-radius: 10px; padding: 0.55rem 0.7rem;
+        margin: 0; width: 100%; transition: background 0.15s ease;
+    }
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:hover { background: #F3EBFF; }
+    div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child { display: none; }
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) { background: #6E11F4; }
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
+        color: #fff !important; font-weight: 600;
+    }
+
+    /* Onglets (Mes clients / Ajouter un client / ...) aux couleurs de la marque. */
+    button[data-baseweb="tab"] p {
+        font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !important;
+        text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] p { color: #6E11F4 !important; }
+    div[data-baseweb="tab-highlight"] { background-color: #6E11F4 !important; height: 2.5px !important; }
     </style>
     """,
     unsafe_allow_html=True,
