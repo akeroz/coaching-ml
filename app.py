@@ -58,29 +58,50 @@ if DEMO_MODE and db.get_all_clients().empty:
 st.markdown(
     """
     <style>
-    .app-header {
-        display: flex; align-items: center; gap: 0.9rem;
-        padding: 0.9rem 1.1rem; margin-bottom: 1.2rem;
-        background: linear-gradient(90deg, rgba(16,185,129,0.16), rgba(16,185,129,0));
-        border-left: 4px solid #10B981; border-radius: 8px;
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
+
+    :root {
+        --violet: #6E11F4;
+        --violet-dark: #4C0FB0;
+        --violet-tint: #F3EBFF;
+        --ink: #1A1A1A;
     }
-    .app-header .icon { font-size: 1.9rem; line-height: 1; }
-    .app-header h1 { font-size: 1.35rem; margin: 0; }
-    .app-header p { margin: 0.1rem 0 0 0; opacity: 0.75; font-size: 0.88rem; }
+
+    .app-header {
+        background: linear-gradient(135deg, var(--violet), var(--violet-dark));
+        padding: 1.5rem 1.8rem; margin-bottom: 1.6rem; border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(110,17,244,0.18);
+    }
+    .app-header .tag {
+        font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+        letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.7);
+        display: block; margin-bottom: 0.35rem;
+    }
+    .app-header h1 {
+        font-family: 'Playfair Display', serif; font-weight: 800; font-size: 2rem;
+        color: #fff; margin: 0; line-height: 1.05;
+    }
+    .app-header p { margin: 0.45rem 0 0 0; color: rgba(255,255,255,0.85); font-size: 0.92rem; }
 
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
     .kpi-card {
-        background: #171B24; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px;
-        padding: 1.1rem 1.3rem;
+        background: #fff; border: 1px solid #ECE3FC; border-radius: 14px;
+        padding: 1.15rem 1.3rem; box-shadow: 0 2px 8px rgba(110,17,244,0.05);
     }
-    .kpi-card .kpi-icon { font-size: 1.3rem; margin-bottom: 0.35rem; }
-    .kpi-card .kpi-value { font-size: 1.9rem; font-weight: 700; line-height: 1.15; }
-    .kpi-card .kpi-label { font-size: 0.8rem; opacity: 0.62; margin-top: 0.25rem; }
+    .kpi-card .kpi-icon { font-size: 1.2rem; margin-bottom: 0.4rem; }
+    .kpi-card .kpi-value {
+        font-family: 'Playfair Display', serif; font-weight: 800;
+        font-size: 2rem; line-height: 1.1; color: var(--ink);
+    }
+    .kpi-card .kpi-label {
+        font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; letter-spacing: 0.07em;
+        text-transform: uppercase; color: var(--violet); margin-top: 0.35rem; font-weight: 600;
+    }
 
     .client-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
     .client-card {
-        background: #171B24; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px;
-        padding: 1.05rem 1.15rem;
+        background: #fff; border: 1px solid #ECE3FC; border-radius: 14px;
+        padding: 1.1rem 1.2rem; box-shadow: 0 2px 8px rgba(110,17,244,0.05);
     }
     .client-card-head { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.75rem; }
     .avatar {
@@ -88,34 +109,41 @@ st.markdown(
         display: flex; align-items: center; justify-content: center;
         font-weight: 700; color: #fff; font-size: 0.92rem;
     }
-    .client-name { font-weight: 600; font-size: 0.95rem; }
-    .client-meta { font-size: 0.78rem; opacity: 0.6; }
-    .client-status { font-size: 0.8rem; margin-top: 0.55rem; }
-    .progress-track { background: rgba(255,255,255,0.08); border-radius: 6px; height: 7px; margin-top: 0.6rem; overflow: hidden; }
+    .client-name { font-weight: 700; font-size: 0.95rem; color: var(--ink); }
+    .client-meta {
+        font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+        letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.55;
+    }
+    .client-status { font-size: 0.82rem; margin-top: 0.6rem; color: var(--ink); }
+    .progress-track { background: #F1ECFB; border-radius: 6px; height: 7px; margin-top: 0.6rem; overflow: hidden; }
     .progress-fill { height: 100%; border-radius: 6px; }
 
     .activity-feed { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
     .activity-item {
         display: flex; justify-content: space-between; align-items: center;
-        padding: 0.55rem 0.9rem; background: #171B24; border-radius: 8px;
-        font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.05);
+        padding: 0.6rem 0.9rem; background: #fff; border-radius: 10px;
+        font-size: 0.85rem; border: 1px solid #ECE3FC; box-shadow: 0 1px 4px rgba(110,17,244,0.04);
     }
-    .activity-item .activity-date { opacity: 0.5; font-size: 0.75rem; white-space: nowrap; margin-left: 1rem; }
+    .activity-item .activity-date {
+        font-family: 'JetBrains Mono', monospace; opacity: 0.5; font-size: 0.72rem;
+        white-space: nowrap; margin-left: 1rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-AVATAR_PALETTE = ["#10B981", "#3B82F6", "#8B5CF6", "#F59E0B", "#EF4444", "#EC4899", "#14B8A6", "#6366F1"]
-STATUS_COLOR = {"green": "#10B981", "red": "#EF4444", "gray": "#6B7280"}
+AVATAR_PALETTE = ["#6E11F4", "#9747FF", "#4C0FB0", "#C026D3", "#DB2777", "#059669", "#D97706", "#0EA5E9"]
+STATUS_COLOR = {"green": "#059669", "red": "#DC2626", "gray": "#9CA3AF"}
 
 
-def render_header(title: str, subtitle: str = ""):
+def render_header(title: str, subtitle: str = "", tag: str = "COACHING ML"):
     st.markdown(
         f"""
         <div class="app-header">
-            <div class="icon">💪</div>
-            <div><h1>{title}</h1><p>{subtitle}</p></div>
+            <span class="tag">{tag}</span>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -239,20 +267,39 @@ ESPACE_TECHNIQUE = [
     "Gestion de projet",
 ]
 
-st.sidebar.caption("Coaching ML - @builtbyarthur")
-espace = st.sidebar.radio("Espace", ["Espace coach", "Documentation technique"])
+PAGE_ICONS = {
+    "Accueil": "🏠  Accueil",
+    "Mes clients": "👥  Mes clients",
+    "Prediction en temps reel": "🔮  Prediction en temps reel",
+    "Presentation du projet": "📄  Presentation du projet",
+    "Pipeline ETL": "🔧  Pipeline ETL",
+    "Comparaison des modeles": "📊  Comparaison des modeles",
+    "Demo dashboard (donnees simulees)": "🎭  Demo dashboard (simulee)",
+    "Reentrainement (avance)": "🔁  Reentrainement (avance)",
+    "Gestion de projet": "📋  Gestion de projet",
+}
+ESPACE_ICONS = {"Espace coach": "🧑‍💼  Espace coach", "Documentation technique": "🛠️  Documentation technique"}
+
+st.sidebar.markdown(
+    "<div style='font-family:JetBrains Mono,monospace;font-size:0.72rem;letter-spacing:0.1em;"
+    "text-transform:uppercase;color:#6E11F4;font-weight:600;margin-bottom:0.3rem;'>Coaching ML</div>",
+    unsafe_allow_html=True,
+)
+espace = st.sidebar.radio(
+    "Espace", ["Espace coach", "Documentation technique"], format_func=lambda x: ESPACE_ICONS.get(x, x)
+)
 st.sidebar.markdown("---")
 if espace == "Espace coach":
-    page = st.sidebar.radio("Navigation", ESPACE_COACH)
+    page = st.sidebar.radio("Navigation", ESPACE_COACH, format_func=lambda x: PAGE_ICONS.get(x, x))
 else:
-    page = st.sidebar.radio("Navigation", ESPACE_TECHNIQUE)
+    page = st.sidebar.radio("Navigation", ESPACE_TECHNIQUE, format_func=lambda x: PAGE_ICONS.get(x, x))
     st.sidebar.caption("Pages de documentation / certification / maintenance avancee.")
 
 # ----------------------------------------------------------------------------
 # ACCUEIL
 # ----------------------------------------------------------------------------
 if page == "Accueil":
-    render_header("Accueil", "Vue d'ensemble de votre activite de coaching")
+    render_header("Accueil", "Vue d'ensemble de votre activite de coaching", tag="TABLEAU DE BORD")
     if DEMO_MODE:
         st.caption(
             "🎭 Mode demo : les clients affiches sont des profils fictifs generes pour "
@@ -359,7 +406,7 @@ if page == "Accueil":
 elif page == "Mes clients":
     if "_toast_message" in st.session_state:
         st.toast(st.session_state.pop("_toast_message"))
-    render_header("Mes clients", "Gestion des clients reels, suivi hebdomadaire et export")
+    render_header("Mes clients", "Gestion des clients reels, suivi hebdomadaire et export", tag="GESTION CLIENTS")
     if DEMO_MODE:
         st.caption(
             "🎭 Mode demo : les clients ci-dessous sont des profils fictifs generes pour "
@@ -601,7 +648,7 @@ elif page == "Mes clients":
 # PREDICTION EN TEMPS REEL
 # ----------------------------------------------------------------------------
 elif page == "Prediction en temps reel":
-    render_header("Prediction en temps reel", "Simuler un profil sans creer de client")
+    render_header("Prediction en temps reel", "Simuler un profil sans creer de client", tag="MODELE IA")
     st.info(
         "**Transparence (AI Act, art. 50)** : ce resultat est une estimation statistique "
         "produite par un systeme d'IA, pas une decision automatique. Vous restez seul "
@@ -655,7 +702,7 @@ elif page == "Prediction en temps reel":
                 title={"text": "Probabilite d'atteinte de l'objectif (%)"},
                 gauge={
                     "axis": {"range": [0, 100]},
-                    "bar": {"color": "#10B981"},
+                    "bar": {"color": "#6E11F4"},
                     "steps": [
                         {"range": [0, 40], "color": "#f8b4b4"},
                         {"range": [40, 70], "color": "#ffe08a"},
@@ -811,8 +858,8 @@ elif page == "Comparaison des modeles":
                      "auc_roc", "cv_mean", "cv_std", "training_time_sec", "composite_score"]
     styled = ranking[display_cols].style.highlight_max(
         subset=["accuracy", "f1_weighted", "precision_weighted", "recall_weighted", "auc_roc", "composite_score"],
-        color="#0d3b2a",
-    ).highlight_min(subset=["training_time_sec"], color="#0d3b2a").format(precision=3)
+        color="#F3EBFF",
+    ).highlight_min(subset=["training_time_sec"], color="#F3EBFF").format(precision=3)
     st.dataframe(styled, use_container_width=True)
     st.caption("Surbrillance = meilleure valeur sur chaque metrique (temps d'entrainement : le plus bas est le meilleur).")
 
