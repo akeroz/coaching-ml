@@ -65,6 +65,7 @@ ALTER TABLE suivis_hebdo ADD COLUMN IF NOT EXISTS tour_taille_cm REAL;
 """
 
 _engine: Engine | None = None
+_db_initialized: bool = False
 
 
 def get_database_url() -> str:
@@ -92,6 +93,12 @@ def get_connection():
 
 
 def init_db():
+    """Cree les tables/colonnes si besoin. N'execute les commandes DDL qu'une seule
+    fois par processus (evite un aller-retour reseau superflu a chaque lecture, qui
+    ralentissait sensiblement chaque interaction avec l'application)."""
+    global _db_initialized
+    if _db_initialized:
+        return
     with get_connection() as conn:
         for statement in SCHEMA.strip().split(";\n\n"):
             statement = statement.strip()
@@ -101,6 +108,7 @@ def init_db():
             statement = statement.strip().rstrip(";")
             if statement:
                 conn.execute(text(statement))
+    _db_initialized = True
 
 
 def _next_client_id(conn) -> str:

@@ -195,6 +195,40 @@ def load_model_artifacts():
     return load_artifacts()
 
 
+@st.cache_data(ttl=30)
+def cached_clients() -> pd.DataFrame:
+    return db.get_all_clients()
+
+
+@st.cache_data(ttl=30)
+def cached_weigh_ins_by_client() -> dict:
+    """Toutes les pesees en un seul aller-retour reseau vers la base, regroupees par
+    client - remplace une requete Supabase separee par client (N+1), qui ralentissait
+    sensiblement l'app des que le nombre de clients augmentait."""
+    all_weigh_ins = db.get_all_weigh_ins()
+    if all_weigh_ins.empty:
+        return {}
+    return {cid: grp.reset_index(drop=True) for cid, grp in all_weigh_ins.groupby("client_id")}
+
+
+EMPTY_WEIGH_INS = pd.DataFrame(columns=["id", "client_id", "date_saisie", "poids", "note", "energie", "tour_taille_cm"])
+
+
+def invalidate_client_caches():
+    """A appeler apres tout ajout/modification/suppression de client ou de pesee,
+    pour que l'affichage reflete immediatement le changement."""
+    cached_clients.clear()
+    cached_weigh_ins_by_client.clear()
+
+
+def refresh_after_write(message: str):
+    """Invalide le cache, programme un toast de confirmation et relance l'affichage
+    immediatement (au lieu de demander a l'utilisateur de recharger la page a la main)."""
+    invalidate_client_caches()
+    st.session_state["_toast_message"] = message
+    st.rerun()
+
+
 ESPACE_COACH = ["Accueil", "Mes clients", "Prediction en temps reel"]
 ESPACE_TECHNIQUE = [
     "Presentation du projet",
@@ -225,7 +259,7 @@ if page == "Accueil":
             "illustrer le fonctionnement de l'application, pas de vrais clients."
         )
 
-    clients_df = db.get_all_clients()
+    clients_df = cached_clients()
     if clients_df.empty:
         st.info(
             "Aucun client enregistre pour le moment. Rendez-vous dans \"Mes clients\" "
@@ -238,8 +272,9 @@ if page == "Accueil":
 
         model, scaler, encoders = load_model_artifacts()
 
-        # Une seule lecture des pesees par client, reutilisee pour risques/portefeuille/activite/suivis
-        weigh_ins_by_client = {cid: db.get_weigh_ins(cid) for cid in actifs_df["client_id"]}
+        # Une seule requete groupee pour toutes les pesees (au lieu d'une par client)
+        all_weigh_ins = cached_weigh_ins_by_client()
+        weigh_ins_by_client = {cid: all_weigh_ins.get(cid, EMPTY_WEIGH_INS) for cid in actifs_df["client_id"]}
 
         risques, portfolio_rows, activity_rows, stale = [], [], [], []
         for _, client in actifs_df.iterrows():
@@ -322,6 +357,8 @@ if page == "Accueil":
 # MES CLIENTS
 # ----------------------------------------------------------------------------
 elif page == "Mes clients":
+    if "_toast_message" in st.session_state:
+        st.toast(st.session_state.pop("_toast_message"))
     render_header("Mes clients", "Gestion des clients reels, suivi hebdomadaire et export")
     if DEMO_MODE:
         st.caption(
@@ -334,13 +371,14 @@ elif page == "Mes clients":
     )
 
     with tab_liste:
-        clients_df = db.get_all_clients()
+        clients_df = cached_clients()
         if clients_df.empty:
             st.write("Aucun client enregistre pour le moment. Utilisez l'onglet \"Ajouter un client\".")
         else:
+            all_weigh_ins = cached_weigh_ins_by_client()
             card_rows = []
             for _, c in clients_df.iterrows():
-                w = db.get_weigh_ins(c["client_id"])
+                w = all_weigh_ins.get(c["client_id"], EMPTY_WEIGH_INS)
                 poids_actuel = w.iloc[-1]["poids"] if not w.empty else c["poids_initial_kg"]
                 statut = compute_progress_status(c, poids_actuel)
                 card_rows.append({
@@ -366,8 +404,8 @@ elif page == "Mes clients":
                 "Choisir un client", clients_df["client_id"],
                 format_func=lambda cid: f"{cid} - " + clients_df.set_index('client_id').loc[cid, 'prenom'] + " " + clients_df.set_index('client_id').loc[cid, 'nom'],
             )
-            client = db.get_client(selected_id)
-            weigh_ins = db.get_weigh_ins(selected_id)
+            client = clients_df.set_index("client_id").loc[selected_id]
+            weigh_ins = all_weigh_ins.get(selected_id, EMPTY_WEIGH_INS)
             poids_actuel = weigh_ins.iloc[-1]["poids"] if not weigh_ins.empty else client["poids_initial_kg"]
             statut = compute_progress_status(client, poids_actuel)
 
@@ -427,22 +465,22 @@ elif page == "Mes clients":
                             "proteines_g_par_jour": e_proteines, "heures_sommeil": e_sommeil,
                             "semaines_suivi_prevues": e_semaines, "adherence_programme_pct": e_adherence,
                         })
-                        st.success("Informations mises a jour. Rechargez la page pour voir les changements.")
+                        refresh_after_write("Informations mises a jour.")
 
             st.subheader("Cloturer le suivi")
             col_a, col_b, col_c = st.columns(3)
             with col_a:
                 if st.button("Marquer : objectif atteint"):
                     db.update_client_status(selected_id, actif=False, objectif_atteint=1)
-                    st.success("Client marque comme objectif atteint. Rechargez la page pour voir la mise a jour.")
+                    refresh_after_write("Client marque comme objectif atteint.")
             with col_b:
                 if st.button("Marquer : objectif non atteint"):
                     db.update_client_status(selected_id, actif=False, objectif_atteint=0)
-                    st.success("Client marque comme objectif non atteint. Rechargez la page pour voir la mise a jour.")
+                    refresh_after_write("Client marque comme objectif non atteint.")
             with col_c:
                 if st.button("Supprimer ce client", type="secondary"):
                     db.delete_client(selected_id)
-                    st.success("Client supprime. Rechargez la page.")
+                    refresh_after_write("Client supprime.")
 
             st.subheader("Export PDF")
             model, scaler, encoders = load_model_artifacts()
@@ -500,10 +538,10 @@ elif page == "Mes clients":
                     "semaines_suivi_prevues": semaines_suivi_prevues,
                     "adherence_programme_pct": adherence_programme_pct,
                 }, consentement_recueilli=True)
-                st.success(f"Client ajoute : {new_id}. Retrouvez-le dans l'onglet \"Mes clients\".")
+                refresh_after_write(f"Client ajoute : {new_id}.")
 
     with tab_suivi:
-        clients_df = db.get_all_clients()
+        clients_df = cached_clients()
         actifs_df = clients_df[clients_df["actif"] == 1] if not clients_df.empty else clients_df
         if actifs_df.empty:
             st.write("Aucun client actif. Ajoutez-en un dans l'onglet \"Ajouter un client\".")
@@ -533,7 +571,7 @@ elif page == "Mes clients":
                     energie=energie_semaine,
                     tour_taille_cm=tour_taille_semaine if tour_taille_semaine > 0 else None,
                 )
-                st.success("Pesee enregistree.")
+                refresh_after_write("Pesee enregistree.")
 
             st.subheader("Historique")
             st.dataframe(db.get_weigh_ins(selected_id_suivi), use_container_width=True)
