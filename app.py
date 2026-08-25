@@ -58,113 +58,145 @@ if DEMO_MODE and db.get_all_clients().empty:
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap');
 
     :root {
-        --violet: #6E11F4;
-        --violet-dark: #4C0FB0;
-        --violet-tint: #F3EBFF;
-        --ink: #1A1A1A;
+        --violet-bg: #5B0EC4;
+        --violet-deep: #4C0FB0;
+        --violet-accent: #B79CFF;
+        --glass: rgba(255,255,255,0.08);
+        --glass-border: rgba(255,255,255,0.18);
     }
 
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+
     .app-header {
-        background: linear-gradient(135deg, var(--violet), var(--violet-dark));
+        background: rgba(255,255,255,0.07); border: 1px solid var(--glass-border);
         padding: 1.5rem 1.8rem; margin-bottom: 1.6rem; border-radius: 16px;
-        box-shadow: 0 8px 24px rgba(110,17,244,0.18);
     }
     .app-header .tag {
         font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
-        letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.7);
+        letter-spacing: 0.14em; text-transform: uppercase; color: var(--violet-accent);
         display: block; margin-bottom: 0.35rem;
     }
     .app-header h1 {
-        font-family: 'Playfair Display', serif; font-weight: 800; font-size: 2rem;
-        color: #fff; margin: 0; line-height: 1.05;
+        font-family: 'Poppins', sans-serif !important; font-weight: 800 !important; font-size: 2rem;
+        color: #fff !important; margin: 0; line-height: 1.1;
     }
     .app-header p { margin: 0.45rem 0 0 0; color: rgba(255,255,255,0.85); font-size: 0.92rem; }
 
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
     .kpi-card {
-        background: #fff; border: 1px solid #ECE3FC; border-radius: 14px;
-        padding: 1.15rem 1.3rem; box-shadow: 0 2px 8px rgba(110,17,244,0.05);
+        background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px;
+        padding: 1.15rem 1.3rem; backdrop-filter: blur(6px);
     }
     .kpi-card .kpi-icon { font-size: 1.2rem; margin-bottom: 0.4rem; }
     .kpi-card .kpi-value {
-        font-family: 'Playfair Display', serif; font-weight: 800;
-        font-size: 2rem; line-height: 1.1; color: var(--ink);
+        font-family: 'Poppins', sans-serif; font-weight: 800;
+        font-size: 2rem; line-height: 1.1; color: #fff;
     }
     .kpi-card .kpi-label {
         font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; letter-spacing: 0.07em;
-        text-transform: uppercase; color: var(--violet); margin-top: 0.35rem; font-weight: 600;
+        text-transform: uppercase; color: var(--violet-accent); margin-top: 0.35rem; font-weight: 600;
     }
 
     .client-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
     .client-card {
-        background: #fff; border: 1px solid #ECE3FC; border-radius: 14px;
-        padding: 1.1rem 1.2rem; box-shadow: 0 2px 8px rgba(110,17,244,0.05);
+        background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px;
+        padding: 1.1rem 1.2rem; backdrop-filter: blur(6px);
     }
     .client-card-head { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.75rem; }
     .avatar {
         width: 42px; height: 42px; min-width: 42px; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-weight: 700; color: #fff; font-size: 0.92rem;
+        font-weight: 700; color: #fff; font-size: 0.92rem; border: 2px solid rgba(255,255,255,0.35);
     }
-    .client-name { font-weight: 700; font-size: 0.95rem; color: var(--ink); }
+    .client-name { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 0.95rem; color: #fff; }
     .client-meta {
         font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
-        letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.55;
+        letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.6);
     }
-    .client-status { font-size: 0.82rem; margin-top: 0.6rem; color: var(--ink); }
-    .progress-track { background: #F1ECFB; border-radius: 6px; height: 7px; margin-top: 0.6rem; overflow: hidden; }
+    .client-status { font-size: 0.82rem; margin-top: 0.6rem; color: rgba(255,255,255,0.92); }
+    .progress-track { background: rgba(255,255,255,0.15); border-radius: 6px; height: 7px; margin-top: 0.6rem; overflow: hidden; }
     .progress-fill { height: 100%; border-radius: 6px; }
 
     .activity-feed { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
     .activity-item {
         display: flex; justify-content: space-between; align-items: center;
-        padding: 0.6rem 0.9rem; background: #fff; border-radius: 10px;
-        font-size: 0.85rem; border: 1px solid #ECE3FC; box-shadow: 0 1px 4px rgba(110,17,244,0.04);
+        padding: 0.6rem 0.9rem; background: var(--glass); border-radius: 10px;
+        font-size: 0.85rem; border: 1px solid var(--glass-border); color: #fff;
     }
     .activity-item .activity-date {
-        font-family: 'JetBrains Mono', monospace; opacity: 0.5; font-size: 0.72rem;
+        font-family: 'JetBrains Mono', monospace; opacity: 0.6; font-size: 0.72rem;
         white-space: nowrap; margin-left: 1rem;
     }
 
-    /* Titres Streamlit natifs (st.header/subheader/title) en Playfair Display,
+    /* Titres Streamlit natifs (st.header/subheader/title) en Poppins gras et blancs,
        pour que l'identite ne soit pas confinee aux seules cartes personnalisees. */
-    h1, h2, h3 { font-family: 'Playfair Display', serif !important; font-weight: 700 !important; color: #1A1A1A; }
+    h1, h2, h3, h4 { font-family: 'Poppins', sans-serif !important; font-weight: 700 !important; color: #fff !important; }
+    p, span, div, label { color: #fff; }
 
     /* Boutons radio (Espace / Navigation) transformes en pilules cliquables au lieu
-       des ronds natifs Streamlit - plus proche d'une vraie barre de navigation. */
+       des ronds natifs Streamlit - plus proche d'une vraie barre de navigation.
+       Etat actif en blanc plein (inverse) pour se detacher du fond violet. */
     div[data-testid="stRadio"] > label[data-testid="stWidgetLabel"] p {
         font-family: 'JetBrains Mono', monospace !important; font-size: 0.68rem !important;
-        letter-spacing: 0.08em; text-transform: uppercase; color: #6E11F4; opacity: 0.75;
+        letter-spacing: 0.08em; text-transform: uppercase; color: var(--violet-accent) !important; opacity: 0.85;
     }
     div[data-testid="stRadio"] div[role="radiogroup"] { gap: 0.2rem; }
     div[data-testid="stRadio"] label[data-baseweb="radio"] {
         background: transparent; border-radius: 10px; padding: 0.55rem 0.7rem;
         margin: 0; width: 100%; transition: background 0.15s ease;
     }
-    div[data-testid="stRadio"] label[data-baseweb="radio"]:hover { background: #F3EBFF; }
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:hover { background: rgba(255,255,255,0.1); }
     div[data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child { display: none; }
-    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) { background: #6E11F4; }
+    div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) { background: #fff; }
     div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
-        color: #fff !important; font-weight: 600;
+        color: var(--violet-bg) !important; font-weight: 700;
     }
 
     /* Onglets (Mes clients / Ajouter un client / ...) aux couleurs de la marque. */
     button[data-baseweb="tab"] p {
         font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !important;
-        text-transform: uppercase; letter-spacing: 0.04em;
+        text-transform: uppercase; letter-spacing: 0.04em; color: rgba(255,255,255,0.6) !important;
     }
-    button[data-baseweb="tab"][aria-selected="true"] p { color: #6E11F4 !important; }
-    div[data-baseweb="tab-highlight"] { background-color: #6E11F4 !important; height: 2.5px !important; }
+    button[data-baseweb="tab"][aria-selected="true"] p { color: #fff !important; }
+    div[data-baseweb="tab-highlight"] { background-color: #fff !important; height: 2.5px !important; }
+
+    /* Tableaux et graphiques : toujours sur fond blanc, quelle que soit la
+       couleur du reste de l'app, pour rester lisibles et neutres. */
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        background: #fff !important; border-radius: 10px; overflow: hidden;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-AVATAR_PALETTE = ["#6E11F4", "#9747FF", "#4C0FB0", "#C026D3", "#DB2777", "#059669", "#D97706", "#0EA5E9"]
-STATUS_COLOR = {"green": "#059669", "red": "#DC2626", "gray": "#9CA3AF"}
+AVATAR_PALETTE = ["#B79CFF", "#FF9FE5", "#7DD3FC", "#FDBA74", "#86EFAC", "#FDA4AF", "#C4B5FD", "#67E8F9"]
+STATUS_COLOR = {"green": "#34D399", "red": "#F87171", "gray": "#D1D5DB"}
+CHART_BGCOLOR = "#FFFFFF"
+CHART_FONT_COLOR = "#1A1A1A"
+
+
+def style_chart(fig):
+    """Force un fond blanc et un texte sombre sur les graphiques Plotly, quel que
+    soit le theme violet du reste de l'application - garde les visualisations de
+    donnees neutres et lisibles."""
+    fig.update_layout(
+        paper_bgcolor=CHART_BGCOLOR, plot_bgcolor=CHART_BGCOLOR,
+        font_color=CHART_FONT_COLOR, legend_font_color=CHART_FONT_COLOR,
+    )
+    fig.update_xaxes(gridcolor="#EDEDED", zerolinecolor="#DDDDDD")
+    fig.update_yaxes(gridcolor="#EDEDED", zerolinecolor="#DDDDDD")
+    return fig
+
+
+def render_chart(fig, **kwargs):
+    """A utiliser a la place de st.plotly_chart(fig, ...) partout - applique
+    style_chart() puis desactive le theme automatique de Streamlit (qui
+    reappliquerait sinon les couleurs sombres de l'app par-dessus)."""
+    st.plotly_chart(style_chart(fig), use_container_width=True, theme=None, **kwargs)
 
 
 def render_header(title: str, subtitle: str = "", tag: str = "COACHING ML"):
@@ -404,7 +436,7 @@ if page == "Accueil":
                 fig_portfolio.add_hline(y=100, line_dash="dot", opacity=0.3, annotation_text="Objectif")
                 fig_portfolio.add_hline(y=0, line_dash="dot", opacity=0.15)
                 fig_portfolio.update_layout(height=360, margin=dict(l=10, r=10, t=20, b=10))
-                st.plotly_chart(fig_portfolio, use_container_width=True)
+                render_chart(fig_portfolio)
                 st.caption("100% = objectif atteint, 0% = poids de depart, valeurs negatives = eloignement de l'objectif.")
             else:
                 st.caption("Aucune pesee enregistree pour le moment.")
@@ -493,7 +525,7 @@ elif page == "Mes clients":
                                   title=f"Evolution du poids - {client['prenom']} {client['nom']}")
                     fig.add_hline(y=client["poids_cible_kg"], line_dash="dot",
                                   annotation_text="Objectif")
-                    st.plotly_chart(fig, use_container_width=True)
+                    render_chart(fig)
             with col2:
                 st.markdown(f"### {statut['icone']} {statut['libelle']}")
                 st.metric("Poids initial", f"{client['poids_initial_kg']} kg")
@@ -740,7 +772,7 @@ elif page == "Prediction en temps reel":
                     ],
                 },
             ))
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            render_chart(fig_gauge)
 
         with col_b:
             if proba > 0.70:
@@ -835,7 +867,7 @@ elif page == "Pipeline ETL":
         processed_df, x=numeric_choice, color=TARGET_COL,
         barmode="overlay", title=f"Distribution de {numeric_choice} selon l'atteinte d'objectif",
     )
-    st.plotly_chart(fig_hist, use_container_width=True)
+    render_chart(fig_hist)
     st.caption(f"Histogramme de la variable {numeric_choice}, colore selon la variable cible (objectif_atteint).")
 
     st.header("Heatmap de correlation")
@@ -845,7 +877,7 @@ elif page == "Pipeline ETL":
         corr, text_auto=".2f", aspect="auto", color_continuous_scale="RdBu_r", zmin=-1, zmax=1,
         title="Matrice de correlation des variables numeriques",
     )
-    st.plotly_chart(fig_corr, use_container_width=True)
+    render_chart(fig_corr)
     st.caption("Correlation de Pearson entre chaque variable numerique et la variable cible.")
 
     st.header("Equilibre des classes (variable cible)")
@@ -854,7 +886,7 @@ elif page == "Pipeline ETL":
         values=target_counts.values, names=target_counts.index,
         title="Repartition de la variable cible objectif_atteint",
     )
-    st.plotly_chart(fig_target, use_container_width=True)
+    render_chart(fig_target)
     st.caption(f"{target_counts.get('Atteint', 0):.0%} des clients atteignent leur objectif dans ce dataset.")
 
     st.header("Transformations appliquees")
@@ -904,7 +936,7 @@ elif page == "Comparaison des modeles":
                 title=res["label"],
             )
             fig_cm.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig_cm, use_container_width=True)
+            render_chart(fig_cm)
 
     st.header("Courbes ROC superposees")
     fig_roc = go.Figure()
@@ -914,7 +946,7 @@ elif page == "Comparaison des modeles":
     fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="Hasard", line=dict(dash="dash", color="gray")))
     fig_roc.update_layout(xaxis_title="Taux de faux positifs", yaxis_title="Taux de vrais positifs",
                            title="Courbes ROC des 4 modeles")
-    st.plotly_chart(fig_roc, use_container_width=True)
+    render_chart(fig_roc)
     st.caption("Plus une courbe est proche du coin superieur gauche, meilleure est la capacite de discrimination du modele.")
 
     st.header(f"Learning curves - {full_results[winner_key]['label']} (modele retenu)")
@@ -923,7 +955,7 @@ elif page == "Comparaison des modeles":
     fig_lc.add_trace(go.Scatter(x=lc["train_sizes"], y=lc["train_scores_mean"], mode="lines+markers", name="Score entrainement"))
     fig_lc.add_trace(go.Scatter(x=lc["train_sizes"], y=lc["val_scores_mean"], mode="lines+markers", name="Score validation"))
     fig_lc.update_layout(xaxis_title="Taille du jeu d'entrainement", yaxis_title="AUC-ROC (CV 5-fold)")
-    st.plotly_chart(fig_lc, use_container_width=True)
+    render_chart(fig_lc)
     st.caption("Convergence des scores entrainement/validation : un ecart faible indique une bonne generalisation (pas de surapprentissage majeur).")
 
     st.header("Justification de la selection automatique")
@@ -982,7 +1014,7 @@ elif page == "Demo dashboard (donnees simulees)":
     for client_id in tracking_df["client_id"].unique():
         cible = tracking_df[tracking_df["client_id"] == client_id]["poids_cible"].iloc[0]
         fig_track.add_hline(y=cible, line_dash="dot", opacity=0.15)
-    st.plotly_chart(fig_track, use_container_width=True)
+    render_chart(fig_track)
     st.caption("Chaque courbe represente la trajectoire de poids simulee d'un client vers son objectif.")
 
     st.header("KPIs globaux (simulation)")
