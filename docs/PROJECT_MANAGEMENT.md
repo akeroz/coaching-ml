@@ -106,6 +106,30 @@ pour l'ensemble des modeles (coherence du pipeline de features).
 - **Pas de CAPTCHA** : l'application est un outil interne au coach, sans
   formulaire d'inscription public.
 
+## Strategie d'accompagnement du changement
+
+Avant l'application, le suivi des clients reposait sur des outils generiques
+non connectes entre eux (DM Instagram, Google Sheets partage, ManyChat). Le
+passage a l'application centralise ce suivi et introduit un changement de
+processus qu'il faut accompagner, meme dans un contexte solo :
+
+- **Impact sur le processus existant** : les donnees ne sont plus dispersees
+  entre Sheets/Instagram mais centralisees dans une base unique - la
+  transition se fait client par client (nouveaux clients directement dans
+  l'app, clients historiques migres progressivement), pas en un seul bloc,
+  pour eviter toute perte de suivi pendant la bascule.
+- **Plan d'action** : (1) creer la fiche du client dans l'app avec son
+  historique connu, (2) continuer les check-ins par le canal habituel (DM,
+  message) le temps que le nouveau reflexe de saisie soit installe, (3)
+  arreter le double suivi une fois la fiche a jour.
+- **Accompagner la bonne utilisation de l'IA aupres des clients** : la
+  prediction et son interpretation restent formulees en langage simple et
+  actionnable au client ("ton adherence a baisse, on ajuste le programme"),
+  jamais comme un verdict brut - la comprehension du client sur ce que l'outil
+  fait (et ne fait pas) fait partie de l'accompagnement du changement, au
+  meme titre qu'un accompagnement de type Lean management dans un contexte
+  d'entreprise plus large.
+
 ## Communication et coordination a distance
 
 Le projet sert directement les clients de coaching @builtbyarthur, geres a
