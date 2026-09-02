@@ -54,6 +54,39 @@ Utilisateur final (coach @builtbyarthur)
 
 Voir `docs/architecture_diagram.png` (genere par `src/architecture_diagram.py`).
 
+## Maquette de l'infrastructure de deploiement
+
+Cette maquette decrit l'infrastructure d'hebergement (distincte du pipeline
+ML ci-dessus), pour permettre a un tiers de comprendre et reproduire le
+deploiement :
+
+```
+GitHub (depot public)
+  |-- code source (app.py, src/)
+  |-- .github/workflows/tests.yml   -> CI : pytest sur chaque push
+  |-- .github/workflows/keepalive.yml -> ping Supabase toutes les 3 jours
+  |
+  v
+Streamlit Cloud (hebergement de l'application, gratuit)
+  |-- Deploiement automatique a chaque push sur main
+  |-- Secrets (DATABASE_URL) injectes via l'interface Streamlit Cloud,
+  |   jamais dans le depot
+  |-- Acces restreint : "Only specific people can view this app"
+  |
+  v
+Supabase (Postgres hebergee, gratuit)
+  |-- Tables clients / suivis_hebdo (donnees reelles)
+  |-- Connexion via pooler (aws-*.pooler.supabase.com:6543),
+  |   compatible IPv4, chiffree en transit (TLS)
+```
+
+Il n'existe pas d'environnement de staging distinct de la production : ce
+choix est assume (contrainte budget zero du CDC) plutot que subi - Streamlit
+Cloud sert a la fois de bac a sable de demonstration (`DEMO_MODE`) et
+d'environnement reel, la separation etant faite au niveau des donnees
+(dataset synthetique public vs base clients privee) plutot qu'au niveau de
+l'infrastructure.
+
 ## Choix techniques
 
 | Composant | Choix | Justification |

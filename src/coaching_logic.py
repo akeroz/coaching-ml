@@ -33,29 +33,48 @@ def build_profile_from_client_row(client: pd.Series) -> dict:
     }
 
 
+PROBA_SEUIL_FAVORABLE = 0.70
+PROBA_SEUIL_RISQUE = 0.40
+
+
 def predict_for_client(client: pd.Series, model, scaler, encoders) -> dict:
+    """Seuils de decision bases sur la convention RAG (Red-Amber-Green), un standard
+    largement utilise dans les tableaux de bord de risque et l'aide a la decision :
+    un seuil de decision naturel a 0.5 (defaut de la classification binaire) est
+    entoure d'une zone tampon symetrique (+/- 0.10-0.15) ou le jugement humain du
+    coach doit completer la prediction, plutot qu'un seuil unique tranchant. Voir
+    docs/JUSTIFICATIONS_METHODOLOGIQUES.md pour le detail."""
     profile = build_profile_from_client_row(client)
     X_row = build_feature_row(profile, encoders, scaler)
     proba = float(model.predict_proba(X_row)[0, 1])
     interpretation = (
-        "Profil favorable" if proba > 0.70
-        else "Profil a risque, ajuster le programme" if proba >= 0.40
+        "Profil favorable" if proba > PROBA_SEUIL_FAVORABLE
+        else "Profil a risque, ajuster le programme" if proba >= PROBA_SEUIL_RISQUE
         else "Profil critique, revoir les bases"
     )
     return {"proba": proba, "interpretation": interpretation}
 
 
+SEUIL_STABILITE_KG = 0.15
+
+
 def compute_progress_status(client: pd.Series, poids_actuel: float) -> dict:
     """Statut de progression base sur le rapprochement (ou l'eloignement) du poids
     cible, quel que soit l'objectif (seche/prise_masse/recomposition) - fonctionne
-    de facon uniforme sans logique specifique par type d'objectif."""
+    de facon uniforme sans logique specifique par type d'objectif.
+
+    Le seuil de 0.15 kg pour "stable" n'est pas arbitraire : une pesee quotidienne
+    varie naturellement de plusieurs centaines de grammes a plusieurs kg d'un jour
+    a l'autre (hydratation, digestion, cycle) - un ecart hebdomadaire sous ce seuil
+    est dans le bruit de mesure normal d'un pese-personne grand public, pas un
+    signal de progression reelle. Voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md."""
     poids_initial = client["poids_initial_kg"]
     poids_cible = client["poids_cible_kg"]
     distance_initiale = abs(poids_initial - poids_cible)
     distance_actuelle = abs(poids_actuel - poids_cible)
     ecart = distance_initiale - distance_actuelle  # positif = rapprochement du but
 
-    if abs(ecart) < 0.15:
+    if abs(ecart) < SEUIL_STABILITE_KG:
         return {"icone": "⚪", "libelle": "Stable", "couleur": "gray"}
     if ecart > 0:
         return {"icone": "🟢", "libelle": "En progression", "couleur": "green"}

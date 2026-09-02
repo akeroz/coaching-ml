@@ -4,6 +4,27 @@ Comparaison automatique des 4 modeles entraines et selection du meilleur.
 Score composite = 0.4 * AUC-ROC + 0.3 * F1 (weighted) + 0.2 * Accuracy
                   + 0.1 * (1 / temps_entrainement normalise)
 
+Justification des poids (voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md) : il
+s'agit d'une somme ponderee, technique standard de decision multicritere
+(MCDM). AUC-ROC est le poids le plus fort car c'est la metrique de reference
+pour juger la capacite de discrimination d'un classifieur binaire,
+particulierement robuste au desequilibre de classes (Fawcett, 2006, "An
+introduction to ROC analysis", Pattern Recognition Letters). F1 vient
+ensuite car il penalise a la fois les faux positifs et les faux negatifs -
+important ici car un faux negatif (client a risque non detecte) a un cout
+reel pour le coach. L'accuracy est incluse en 3e position car c'est la
+metrique la plus lisible pour un non-specialiste (le coach), mais elle est
+sous-ponderee car trompeuse seule en cas de desequilibre de classes. Le
+temps d'entrainement recoit le poids le plus faible : c'est une contrainte
+d'ingenierie (cout de reentrainement), pas un critere de qualite predictive.
+
+Ces poids restent un choix parmi d'autres plausibles - c'est pourquoi
+compute_composite_scores_sensitivity() ci-dessous rejoue le classement sous
+plusieurs ponderations alternatives (poids egaux, AUC seul, F1 seul, sans le
+temps) : si le meme modele gagne dans tous les scenarios, la conclusion ne
+depend pas du choix precis des poids, seulement du fait que ce modele domine
+sur (quasi) toutes les metriques prises isolement.
+
 Le meilleur modele est sauvegarde dans models/best_model.pkl, les resultats
 complets dans models/results.json, et un rapport de selection est genere
 dans docs/MODEL_SELECTION_REPORT.md.
@@ -83,6 +104,38 @@ def compute_composite_scores(results: dict) -> pd.DataFrame:
     return df
 
 
+ALTERNATIVE_WEIGHT_SCHEMES = {
+    "Poids retenus (0.4/0.3/0.2/0.1)": WEIGHTS,
+    "Poids egaux (0.25 chacun)": {"auc": 0.25, "f1": 0.25, "accuracy": 0.25, "speed": 0.25},
+    "AUC-ROC seul (1.0)": {"auc": 1.0, "f1": 0.0, "accuracy": 0.0, "speed": 0.0},
+    "F1 seul (1.0)": {"auc": 0.0, "f1": 1.0, "accuracy": 0.0, "speed": 0.0},
+    "Sans le temps (0.44/0.33/0.22/0)": {"auc": 4 / 9, "f1": 3 / 9, "accuracy": 2 / 9, "speed": 0.0},
+}
+
+
+def compute_composite_scores_sensitivity(results: dict) -> pd.DataFrame:
+    """Rejoue le classement sous plusieurs ponderations alternatives et plausibles,
+    pour verifier que le vainqueur ne depend pas du choix precis des poids retenus
+    (voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md)."""
+    rows = []
+    for scheme_name, weights in ALTERNATIVE_WEIGHT_SCHEMES.items():
+        times = [r["training_time_sec"] for r in results.values()]
+        t_min, t_max = min(times), max(times)
+        scored = {}
+        for key, r in results.items():
+            time_norm = (r["training_time_sec"] - t_min) / (t_max - t_min) if t_max > t_min else 0.0
+            speed_score = 1 - time_norm
+            scored[key] = (
+                weights["auc"] * r["auc_roc"]
+                + weights["f1"] * r["f1_weighted"]
+                + weights["accuracy"] * r["accuracy"]
+                + weights["speed"] * speed_score
+            )
+        winner_key = max(scored, key=scored.get)
+        rows.append({"scenario": scheme_name, "vainqueur": results[winner_key]["label"]})
+    return pd.DataFrame(rows)
+
+
 def generate_report(ranking: pd.DataFrame, winner_key: str, results: dict) -> str:
     winner = ranking.iloc[0]
     winner_raw = results[winner_key]
@@ -115,6 +168,37 @@ def generate_report(ranking: pd.DataFrame, winner_key: str, results: dict) -> st
             f"| {rank} | {row['label']} | {row['accuracy']:.3f} | {row['f1_weighted']:.3f} | "
             f"{row['auc_roc']:.3f} | {row['cv_mean']:.3f} ± {row['cv_std']:.3f} | "
             f"{row['training_time_sec']:.1f} | {row['composite_score']:.4f} |"
+        )
+
+    sensitivity = compute_composite_scores_sensitivity(results)
+    lines += [
+        "",
+        "## Analyse de sensibilite des poids",
+        "",
+        "Le choix des poids (0.4/0.3/0.2/0.1) reste une decision argumentee mais "
+        "pas la seule possible (voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md). Le "
+        "tableau ci-dessous rejoue le classement sous plusieurs ponderations "
+        "alternatives, pour verifier que la conclusion ne repose pas sur ce choix precis :",
+        "",
+        "| Scenario de ponderation | Modele vainqueur |",
+        "|---|---|",
+    ]
+    for _, row in sensitivity.iterrows():
+        lines.append(f"| {row['scenario']} | {row['vainqueur']} |")
+
+    unanimous = sensitivity["vainqueur"].nunique() == 1
+    lines.append("")
+    if unanimous:
+        lines.append(
+            f"**{sensitivity['vainqueur'].iloc[0]}** l'emporte dans tous les scenarios testes "
+            "(poids egaux, un seul critere, sans le temps) : le resultat de la selection "
+            "est donc robuste au choix precis des poids, il ne depend pas d'une ponderation arbitraire."
+        )
+    else:
+        lines.append(
+            "Le vainqueur varie selon la ponderation retenue : la selection est donc "
+            "plus sensible au choix des poids, ce qui renforce l'importance de la "
+            "justification donnee ci-dessus pour le scenario retenu."
         )
 
     lines += [

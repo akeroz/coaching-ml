@@ -19,6 +19,20 @@ score = 0.4 * AUC-ROC + 0.3 * F1 (weighted) + 0.2 * Accuracy + 0.1 * (1 / temps_
 | 3 | Foret aleatoire | 0.733 | 0.711 | 0.741 | 0.733 ± 0.049 | 14.4 | 0.7034 |
 | 4 | Reseau de neurones (MLP) | 0.708 | 0.706 | 0.718 | 0.684 ± 0.053 | 24.6 | 0.6406 |
 
+## Analyse de sensibilite des poids
+
+Le choix des poids (0.4/0.3/0.2/0.1) reste une decision argumentee mais pas la seule possible (voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md). Le tableau ci-dessous rejoue le classement sous plusieurs ponderations alternatives, pour verifier que la conclusion ne repose pas sur ce choix precis :
+
+| Scenario de ponderation | Modele vainqueur |
+|---|---|
+| Poids retenus (0.4/0.3/0.2/0.1) | Regression logistique |
+| Poids egaux (0.25 chacun) | Regression logistique |
+| AUC-ROC seul (1.0) | Regression logistique |
+| F1 seul (1.0) | Regression logistique |
+| Sans le temps (0.44/0.33/0.22/0) | Regression logistique |
+
+**Regression logistique** l'emporte dans tous les scenarios testes (poids egaux, un seul critere, sans le temps) : le resultat de la selection est donc robuste au choix precis des poids, il ne depend pas d'une ponderation arbitraire.
+
 ## Modele retenu : Regression logistique
 
 Le modele **Regression logistique** obtient le meilleur score composite (0.7898), grace a :

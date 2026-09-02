@@ -54,6 +54,10 @@ RAW_FEATURE_COLS = [
     "adherence_programme_pct", "objectif_atteint",
 ]
 
+# Seuil minimal usuel en apprentissage automatique pour qu'une re-estimation sur un
+# sous-groupe reste statistiquement significative plutot que du bruit (regle
+# empirique communement citee : au moins 5 a 10 observations par classe avant de
+# tirer une conclusion) - voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md.
 MIN_REAL_CLIENTS = 5
 
 

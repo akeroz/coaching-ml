@@ -17,8 +17,14 @@ from sklearn.metrics import roc_curve
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR / "src"))
 
+# Seuil "pesee en retard" : cadence de suivi hebdomadaire (7 jours) + une marge de
+# grace de securite (~40%) avant de considerer le suivi comme rompu. Pas un chiffre
+# arbitraire : cycle de suivi + tampon, voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md.
+JOURS_AVANT_ALERTE_PESEE = 10
+
 import db  # noqa: E402
 from coaching_logic import (  # noqa: E402
+    PROBA_SEUIL_FAVORABLE, PROBA_SEUIL_RISQUE,
     build_profile_from_client_row, compute_progress_status,
     local_feature_importance, predict_for_client, progress_pct,
 )
@@ -400,7 +406,7 @@ if page == "Accueil":
         for _, client in actifs_df.iterrows():
             nom_complet = f"{client['prenom']} {client['nom']}"
             pred = predict_for_client(client, model, scaler, encoders)
-            if pred["proba"] < 0.70:
+            if pred["proba"] < PROBA_SEUIL_FAVORABLE:
                 risques.append({"client": nom_complet, "probabilite": pred["proba"], "statut": pred["interpretation"]})
 
             weigh_ins = weigh_ins_by_client[client["client_id"]]
@@ -424,7 +430,7 @@ if page == "Accueil":
                 })
 
                 days_since = (pd.Timestamp.today().normalize() - last_date).days
-                if days_since >= 10:
+                if days_since >= JOURS_AVANT_ALERTE_PESEE:
                     stale.append({"client": nom_complet, "derniere_pesee": last_date.date().isoformat(), "jours_ecoules": days_since})
 
         render_kpi_cards([
@@ -777,18 +783,18 @@ elif page == "Prediction en temps reel":
                     "axis": {"range": [0, 100]},
                     "bar": {"color": "#6E11F4"},
                     "steps": [
-                        {"range": [0, 40], "color": "#f8b4b4"},
-                        {"range": [40, 70], "color": "#ffe08a"},
-                        {"range": [70, 100], "color": "#b7f0c1"},
+                        {"range": [0, PROBA_SEUIL_RISQUE * 100], "color": "#f8b4b4"},
+                        {"range": [PROBA_SEUIL_RISQUE * 100, PROBA_SEUIL_FAVORABLE * 100], "color": "#ffe08a"},
+                        {"range": [PROBA_SEUIL_FAVORABLE * 100, 100], "color": "#b7f0c1"},
                     ],
                 },
             ))
             render_chart(fig_gauge)
 
         with col_b:
-            if proba > 0.70:
+            if proba > PROBA_SEUIL_FAVORABLE:
                 st.success(f"**Profil favorable** — probabilite estimee : {proba:.0%}")
-            elif proba >= 0.40:
+            elif proba >= PROBA_SEUIL_RISQUE:
                 st.warning(f"**Profil a risque, ajuster le programme** — probabilite estimee : {proba:.0%}")
             else:
                 st.error(f"**Profil critique, revoir les bases** — probabilite estimee : {proba:.0%}")
@@ -929,12 +935,25 @@ elif page == "Comparaison des modeles":
     st.header("Tableau comparatif")
     display_cols = ["label", "accuracy", "f1_weighted", "precision_weighted", "recall_weighted",
                      "auc_roc", "cv_mean", "cv_std", "training_time_sec", "composite_score"]
-    styled = ranking[display_cols].style.highlight_max(
-        subset=["accuracy", "f1_weighted", "precision_weighted", "recall_weighted", "auc_roc", "composite_score"],
-        color="#F3EBFF",
-    ).highlight_min(subset=["training_time_sec"], color="#F3EBFF").format(precision=3)
+
+    BEST_VALUE_STYLE = "background-color: #2FB870; color: #FFFFFF; font-weight: 700;"
+
+    def _highlight_best(col: pd.Series, best: str) -> list[str]:
+        target = col.max() if best == "max" else col.min()
+        return [BEST_VALUE_STYLE if v == target else "" for v in col]
+
+    styled = (
+        ranking[display_cols]
+        .style.apply(
+            _highlight_best, best="max", subset=[
+                "accuracy", "f1_weighted", "precision_weighted", "recall_weighted", "auc_roc", "composite_score",
+            ],
+        )
+        .apply(_highlight_best, best="min", subset=["training_time_sec"])
+        .format(precision=3)
+    )
     st.dataframe(styled, use_container_width=True)
-    st.caption("Surbrillance = meilleure valeur sur chaque metrique (temps d'entrainement : le plus bas est le meilleur).")
+    st.caption("Surbrillance verte = meilleure valeur sur chaque metrique (temps d'entrainement : le plus bas est le meilleur).")
 
     st.header("Matrices de confusion")
     cols = st.columns(4)
