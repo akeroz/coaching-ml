@@ -935,12 +935,25 @@ elif page == "Comparaison des modeles":
     st.header("Tableau comparatif")
     display_cols = ["label", "accuracy", "f1_weighted", "precision_weighted", "recall_weighted",
                      "auc_roc", "cv_mean", "cv_std", "training_time_sec", "composite_score"]
-    styled = ranking[display_cols].style.highlight_max(
-        subset=["accuracy", "f1_weighted", "precision_weighted", "recall_weighted", "auc_roc", "composite_score"],
-        color="#F3EBFF",
-    ).highlight_min(subset=["training_time_sec"], color="#F3EBFF").format(precision=3)
+
+    BEST_VALUE_STYLE = "background-color: #2FB870; color: #FFFFFF; font-weight: 700;"
+
+    def _highlight_best(col: pd.Series, best: str) -> list[str]:
+        target = col.max() if best == "max" else col.min()
+        return [BEST_VALUE_STYLE if v == target else "" for v in col]
+
+    styled = (
+        ranking[display_cols]
+        .style.apply(
+            _highlight_best, best="max", subset=[
+                "accuracy", "f1_weighted", "precision_weighted", "recall_weighted", "auc_roc", "composite_score",
+            ],
+        )
+        .apply(_highlight_best, best="min", subset=["training_time_sec"])
+        .format(precision=3)
+    )
     st.dataframe(styled, use_container_width=True)
-    st.caption("Surbrillance = meilleure valeur sur chaque metrique (temps d'entrainement : le plus bas est le meilleur).")
+    st.caption("Surbrillance verte = meilleure valeur sur chaque metrique (temps d'entrainement : le plus bas est le meilleur).")
 
     st.header("Matrices de confusion")
     cols = st.columns(4)
