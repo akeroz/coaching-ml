@@ -1,7 +1,13 @@
 """Reentrainement periodique du modele en integrant les vrais clients labellises
 (objectif_atteint connu), avec une garde anti-regression : les artefacts de
 production (best_model.pkl, scaler, encoders, dataset_final.csv) ne sont ecrases
-que si le nouveau score composite est au moins aussi bon que l'ancien.
+que si le nouveau score composite depasse l'ancien d'au moins une marge de
+promotion minimale (voir _get_previous_winner_stats/run_retrain) - un simple
+">=" aurait pu promouvoir un modele sur une amelioration nulle ou infime,
+indiscernable du bruit statistique normal de mesure. Cette marge n'est pas une
+constante inventee : elle est derivee de l'ecart-type de validation croisee
+(cv_std) deja mesure pour le modele en production, pondere par le poids de
+l'AUC-ROC dans le score composite - voir docs/JUSTIFICATIONS_METHODOLOGIQUES.md.
 
 Note methodologique (absence de fuite de donnees) : le scaler/encoders utilises
 pour evaluer les 4 modeles sont ajustes uniquement sur un split d'entrainement
@@ -74,16 +80,20 @@ def build_combined_raw_df() -> tuple[pd.DataFrame, int]:
     return combined, len(real_df)
 
 
-def _get_previous_winner_score() -> float:
+def _get_previous_winner_stats() -> tuple[float, float]:
+    """Retourne (composite_score, cv_std) du modele actuellement en production.
+    cv_std est l'ecart-type de l'AUC-ROC sur la validation croisee 5-fold - une
+    mesure deja calculee du bruit statistique normal de ce modele, utilisee comme
+    marge de promotion (voir run_retrain ci-dessous)."""
     if not PROD_RESULTS_PATH.exists():
-        return -1.0
+        return -1.0, 0.0
     with open(PROD_RESULTS_PATH, "r", encoding="utf-8") as f:
         prod_results = json.load(f)
     winner_key = prod_results["winner"]
     for row in prod_results["ranking"]:
         if row["key"] == winner_key:
-            return row["composite_score"]
-    return -1.0
+            return row["composite_score"], row["cv_std"]
+    return -1.0, 0.0
 
 
 def get_retrain_history() -> list[dict]:
@@ -104,6 +114,7 @@ def _log_retrain_attempt(summary: dict):
         "n_real_clients": summary.get("n_real_clients"),
         "old_score": summary.get("old_score"),
         "new_score": summary.get("new_score"),
+        "promotion_margin": summary.get("promotion_margin"),
         "winner_label": summary.get("new_winner_label"),
     })
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -147,15 +158,25 @@ def run_retrain(min_real_clients: int = MIN_REAL_CLIENTS) -> dict:
     ranking = compute_composite_scores(candidate_train_results)
     new_winner_key = ranking.iloc[0]["key"]
     new_score = float(ranking.iloc[0]["composite_score"])
-    old_score = _get_previous_winner_score()
+    old_score, old_cv_std = _get_previous_winner_stats()
 
-    promoted = new_score >= old_score
+    # Marge de promotion : exiger une amelioration strictement superieure a 0 ne
+    # suffit pas a distinguer un vrai gain d'une simple fluctuation de mesure. La
+    # marge minimale exigee est derivee de l'ecart-type de validation croisee
+    # (cv_std) deja mesure pour le modele actuellement en production, pondere par
+    # le poids de l'AUC-ROC dans le score composite (WEIGHTS["auc"] = 0.4) - pas
+    # une constante inventee, mais le bruit statistique reellement observe sur ce
+    # modele, ramene a l'echelle du score composite. Voir
+    # docs/JUSTIFICATIONS_METHODOLOGIQUES.md.
+    promotion_margin = WEIGHTS["auc"] * old_cv_std
+    promoted = new_score >= old_score + promotion_margin
 
     summary = {
         "status": "promoted" if promoted else "rejected",
         "n_real_clients": n_real,
         "n_total_clients": len(combined_raw_df),
         "old_score": old_score,
+        "promotion_margin": promotion_margin,
         "new_score": new_score,
         "new_winner_label": ranking.iloc[0]["label"],
         "ranking": ranking.to_dict(orient="records"),
@@ -196,7 +217,9 @@ def run_retrain(min_real_clients: int = MIN_REAL_CLIENTS) -> dict:
             f"\n\n## Reentrainement avec donnees reelles\n\n"
             f"Ce modele integre {n_real} client(s) reel(s) labellise(s) en plus du "
             f"dataset synthetique ({len(combined_raw_df)} clients au total). "
-            f"Score composite precedent : {old_score:.4f} -> nouveau : {new_score:.4f}."
+            f"Score composite precedent : {old_score:.4f} -> nouveau : {new_score:.4f} "
+            f"(marge de promotion exigee : {promotion_margin:.4f}, derivee du bruit de "
+            f"validation croisee du modele precedent)."
         )
         SELECTION_REPORT_PATH.write_text(report, encoding="utf-8")
     else:

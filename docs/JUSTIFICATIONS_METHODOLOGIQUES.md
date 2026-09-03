@@ -174,6 +174,28 @@ dit explicitement ("reentrainement trop instable sur un si petit volume").
 
 ---
 
+## 8bis. Marge de promotion lors du reentrainement
+
+**Choix** : un modele candidat n'est promu en production que si son score
+composite depasse celui du modele actuel d'au moins
+`WEIGHTS["auc"] * cv_std_ancien_modele` (voir `src/retrain_with_real_data.py`).
+
+**Justification** : une premiere version comparait simplement
+`nouveau_score >= ancien_score`, ce qui aurait pu promouvoir un modele sur une
+amelioration nulle ou infime (0.0001 par exemple) - indiscernable du bruit
+statistique normal de la mesure, d'autant plus que le test set du
+reentrainement reste largement domine par les donnees synthetiques tant que
+le nombre de vrais clients labellises est faible (voir §8 ci-dessus). La
+marge minimale exigee n'est pas une nouvelle constante inventee : elle est
+derivee de l'ecart-type de validation croisee (`cv_std`) deja mesure pour le
+modele en production - une mesure directe du bruit statistique propre a ce
+modele - ramenee a l'echelle du score composite via le poids de l'AUC-ROC
+dans ce score (0.4, voir §1). C'est une technique standard de detection de
+signal (marge de securite/"deadband" au-dela du bruit de mesure) plutot
+qu'un seuil arbitraire.
+
+---
+
 ## 9. Formule du besoin calorique (Mifflin-St Jeor)
 
 **Choix** : le besoin calorique estime est calcule via l'equation de
@@ -228,5 +250,6 @@ perimetre actuel.
 | Seuil stabilite 0.15 kg | Bruit de mesure documente d'un pese-personne |
 | Alerte a 10 jours | Cycle hebdomadaire + marge de tolerance |
 | MIN_REAL_CLIENTS = 5 | Regle empirique usuelle (taille d'echantillon minimale) |
+| Marge de promotion au reentrainement | Deadband derive du bruit de mesure (cv_std) deja calcule, pas une constante inventee |
 | Mifflin-St Jeor | Formule scientifique publiee et validee (reference citable) |
 | Perimetre du modele (intake vs suivi) | Choix de scope assume, avec extension identifiee |
